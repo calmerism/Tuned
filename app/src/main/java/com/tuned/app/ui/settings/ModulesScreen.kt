@@ -293,77 +293,82 @@ fun ModulesScreen(
 
 
             // --- Section 2: Local .lwp Packages ---
-            item {
-                Spacer(Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            stringResource(R.string.settings_modules_query_title),
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                        )
-                        Text(
-                            stringResource(R.string.settings_modules_query_sub),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Switch(checked = preferModules, onCheckedChange = viewModel::setPreferModules)
-                }
-            }
-
-            item {
-                Card(
-                    onClick = { if (!busy) picker.launch(arrayOf("*/*")) },
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
+            // Hidden until playback queries installed modules: nothing calls
+            // ModuleManager.enabledHandles() yet, so packages and the switch had no effect.
+            if (MODULE_PACKAGES_VISIBLE) {
+                item {
+                    Spacer(Modifier.height(8.dp))
                     Row(
-                        modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp).fillMaxWidth(),
+                        modifier = Modifier.fillMaxWidth(),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        if (busy) {
-                            com.tuned.app.ui.common.LoadingSpinner(modifier = Modifier.size(22.dp))
-                        } else {
-                            Icon(Icons.Filled.Add, contentDescription = null)
-                        }
-                        Spacer(Modifier.width(16.dp))
                         Column(Modifier.weight(1f)) {
                             Text(
-                                stringResource(R.string.settings_modules_add),
+                                stringResource(R.string.settings_modules_query_title),
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                             )
                             Text(
-                                stringResource(R.string.settings_modules_add_sub),
+                                stringResource(R.string.settings_modules_query_sub),
                                 style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
                             )
+                        }
+                        Switch(checked = preferModules, onCheckedChange = viewModel::setPreferModules)
+                    }
+                }
+
+                item {
+                    Card(
+                        onClick = { if (!busy) picker.launch(arrayOf("*/*")) },
+                        shape = RoundedCornerShape(20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.secondaryContainer),
+                        modifier = Modifier.fillMaxWidth(),
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 16.dp).fillMaxWidth(),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            if (busy) {
+                                com.tuned.app.ui.common.LoadingSpinner(modifier = Modifier.size(22.dp))
+                            } else {
+                                Icon(Icons.Filled.Add, contentDescription = null)
+                            }
+                            Spacer(Modifier.width(16.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(
+                                    stringResource(R.string.settings_modules_add),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    stringResource(R.string.settings_modules_add_sub),
+                                    style = MaterialTheme.typography.bodySmall,
+                                )
+                            }
                         }
                     }
                 }
-            }
 
-            if (modules.isEmpty()) {
-                item {
-                    Text(
-                        stringResource(R.string.settings_modules_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(vertical = 4.dp),
+                if (modules.isEmpty()) {
+                    item {
+                        Text(
+                            stringResource(R.string.settings_modules_empty),
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(vertical = 4.dp),
+                        )
+                    }
+                }
+                items(modules, key = { it.manifest.id }) { module ->
+                    ModuleRow(
+                        module = module,
+                        onToggle = { viewModel.setEnabled(module.manifest.id, it) },
+                        onRemove = { viewModel.remove(module.manifest.id) },
                     )
                 }
             }
-            items(modules, key = { it.manifest.id }) { module ->
-                ModuleRow(
-                    module = module,
-                    onToggle = { viewModel.setEnabled(module.manifest.id, it) },
-                    onRemove = { viewModel.remove(module.manifest.id) },
-                )
-            }
+
             item { Spacer(Modifier.height(24.dp)) }
         }
     }
@@ -404,3 +409,6 @@ private fun ModuleRow(
         }
     }
 }
+
+/** Local module packages stay hidden until playback can use them. */
+private const val MODULE_PACKAGES_VISIBLE = false

@@ -170,3 +170,38 @@ fun planCrossfade(input: CrossfadePlanInput): CrossfadeDecision = with(input) {
     ).coerceAtLeast(1L)
     return CrossfadeDecision.HandOff(overlapMs)
 }
+/** What AutoMix reads to pick a transition. Loudness comes from the outgoing player's LoudnessMonitor. */
+data class AutoMixInput(
+    val durationMs: Long,
+    val positionMs: Long,
+    /** Loudness of the last second; null until a second has been measured. */
+    val recentDb: Float?,
+    /** The song's usual level, ignoring silence; null until enough has played. */
+    val typicalDb: Float?,
+    /** The next song is the next track of the same album: play straight through. */
+    val nextContinuesAlbum: Boolean,
+)
+
+const val AUTOMIX_FADE_MS = 8_000L
+const val AUTOMIX_SHORT_FADE_MS = 6_000L
+const val AUTOMIX_MIN_FADE_MS = 3_000L
+const val AUTOMIX_MAX_FADE_MS = 12_000L
+const val AUTOMIX_SHORT_TRACK_MS = 150_000L
+/** How far below its usual level a song must fall to count as fading into its outro. */
+const val AUTOMIX_OUTRO_DROP_DB = 10f
+
+/**
+ * The blend length AutoMix wants right now, used as [CrossfadePlanInput.crossfadeMs].
+ * 0 plays the next song straight on (gapless album). When the outgoing song fades into
+ * its outro inside the last [AUTOMIX_MAX_FADE_MS], the blend starts there and runs for
+ * what is left; otherwise it is a fixed length, shorter for short songs.
+ */
+fun autoMixFadeMs(input: AutoMixInput): Long = with(input) {
+    if (nextContinuesAlbum) return 0L
+    val remaining = durationMs - positionMs
+    val fading = recentDb != null && typicalDb != null && recentDb < typicalDb - AUTOMIX_OUTRO_DROP_DB
+    if (fading && remaining in 1..AUTOMIX_MAX_FADE_MS) {
+        return remaining.coerceIn(AUTOMIX_MIN_FADE_MS, AUTOMIX_MAX_FADE_MS)
+    }
+    if (durationMs in 1 until AUTOMIX_SHORT_TRACK_MS) AUTOMIX_SHORT_FADE_MS else AUTOMIX_FADE_MS
+}

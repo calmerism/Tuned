@@ -19,8 +19,8 @@ class ExclusiveUsbAttachVolumeTest {
     }
 
     @Test
-    fun attachPinWithoutRememberedLevelTrustsTheReading() {
-        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = Float.NaN)).isNull()
+    fun attachPinWithoutRememberedLevelStartsQuiet() {
+        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = Float.NaN)).isEqualTo(FIRST_ATTACH_GAIN)
     }
 
     @Test
@@ -36,7 +36,7 @@ class ExclusiveUsbAttachVolumeTest {
 
     @Test
     fun rememberedLevelMustBeInTheStoredAudibleRange() {
-        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = 1f)).isNull()
-        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = 0.001f)).isNull()
+        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = 1f)).isEqualTo(FIRST_ATTACH_GAIN)
+        assertThat(attachMaxPinFallbackGain(streamGain = 1f, rememberedGain = 0.001f)).isEqualTo(FIRST_ATTACH_GAIN)
     }
 }

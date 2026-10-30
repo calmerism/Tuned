@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,11 +33,38 @@ data class UpdateInfo(
     val downloadFileName: String? = null,
     val isDismissed: Boolean = false,
     val message: String? = null,
+    /** GitHub's published SHA-256 of the APK, when it gave one. */
+    val apkSha256: String? = null,
+    /** 0 to 1 while the APK is downloading, otherwise null. */
+    val downloadProgress: Float? = null,
+    val downloadFailed: Boolean = false,
+    val apkReady: Boolean = false,
+    /** Android needs the listener to allow installs from Tuned before it can go ahead. */
+    val needsInstallPermission: Boolean = false,
 )
+
+/** Release notes are written in Markdown; this shows them as plain text. */
+fun plainReleaseNotes(markdown: String): String = markdown
+    .lineSequence()
+    .map { line ->
+        line.trim()
+            .replace(Regex("^#{1,6}\\s*"), "")
+            .replace(Regex("^[-*]\\s+"), "• ")
+            .replace(Regex("\\[([^]]+)]\\([^)]*\\)"), "$1")
+            .replace(Regex("[*`]"), "")
+    }
+    .joinToString("\n")
+    .replace(Regex("\n{3,}"), "\n\n")
+    .trim()
+
+/** The hash from a GitHub asset digest such as "sha256:ab12…", or null for anything else. */
+fun sha256FromDigest(digest: String?): String? =
+    digest?.takeIf { it.startsWith("sha256:") }?.removePrefix("sha256:")?.lowercase()?.takeIf { it.length == 64 }
 
 data class ReleaseAsset(
     val name: String,
     val downloadUrl: String,
+    val sha256: String? = null,
 )
 
 enum class ApkVariant {
@@ -60,7 +88,11 @@ class AppUpdateManager @Inject constructor(
     )
     val updateInfo: StateFlow<UpdateInfo> = _updateInfo.asStateFlow()
 
+    private var downloadJob: kotlinx.coroutines.Job? = null
+
     init {
+        // Whatever an earlier update left behind has done its job by now.
+        scope.launch { runCatching { updatesDir().deleteRecursively() } }
         checkForUpdate(isSilent = true)
     }
 
@@ -137,7 +169,13 @@ class AppUpdateManager @Inject constructor(
                         val name = asset.optString("name", "").trim()
                         val download = asset.optString("browser_download_url", "").trim()
                         if (name.endsWith(".apk", ignoreCase = true) && download.isNotBlank()) {
-                            apkAssets.add(ReleaseAsset(name = name, downloadUrl = download))
+                            apkAssets.add(
+                                ReleaseAsset(
+                                    name = name,
+                                    downloadUrl = download,
+                                    sha256 = sha256FromDigest(asset.optString("digest", "")),
+                                ),
+                            )
                         }
                     }
                 }
@@ -166,6 +204,7 @@ class AppUpdateManager @Inject constructor(
                         releaseUrl = releaseUrl,
                         downloadUrl = downloadUrl,
                         downloadFileName = downloadFileName,
+                        apkSha256 = bestAsset?.sha256,
                         isDismissed = isDismissed,
                         message = if (!isSilent) {
                             if (hasNewer) "New version $cleanTag available!" else "You're on the latest version ($currentVersion)"
@@ -187,6 +226,105 @@ class AppUpdateManager @Inject constructor(
         val clean = version.removePrefix("v").removePrefix("V")
         prefs.edit().putString("dismissed_version", clean).apply()
         _updateInfo.update { it.copy(isDismissed = true) }
+    }
+
+    /** Downloads the APK and hands it to Android to install. A release without one opens in the browser. */
+    fun startUpdate(context: Context) {
+        val info = _updateInfo.value
+        val url = info.downloadUrl
+        val name = info.downloadFileName
+        if (url == null || name == null) {
+            openUpdate(context)
+            return
+        }
+        if (downloadJob?.isActive == true) return
+        val appContext = context.applicationContext
+        downloadJob = scope.launch {
+            _updateInfo.update { it.copy(downloadProgress = 0f, downloadFailed = false, apkReady = false) }
+            val ok = runCatching { downloadApk(url, info.apkSha256) }
+                .onFailure { android.util.Log.w("AppUpdate", "Update download failed", it) }
+                .getOrDefault(false)
+            _updateInfo.update { it.copy(downloadProgress = null, downloadFailed = !ok, apkReady = ok) }
+            if (ok) withContext(Dispatchers.Main) { install(appContext) }
+        }
+    }
+
+    fun cancelDownload() {
+        downloadJob?.cancel()
+        downloadJob = null
+        apkFile().delete()
+        partFile().delete()
+        _updateInfo.update { it.copy(downloadProgress = null, downloadFailed = false, apkReady = false) }
+    }
+
+    private fun updatesDir() = java.io.File(context.cacheDir, "updates").apply { mkdirs() }
+    private fun apkFile() = java.io.File(updatesDir(), "Tuned-update.apk")
+    private fun partFile() = java.io.File(updatesDir(), "Tuned-update.apk.part")
+
+    private suspend fun downloadApk(url: String, expectedSha256: String?): Boolean {
+        val request = Request.Builder().url(url).header("User-Agent", "Tuned-Android").build()
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        okHttpClient.newCall(request).execute().use { response ->
+            if (!response.isSuccessful) return false
+            val body = response.body ?: return false
+            val total = body.contentLength()
+            var read = 0L
+            var shownPercent = -1
+            partFile().outputStream().use { out ->
+                body.byteStream().use { input ->
+                    val buffer = ByteArray(64 * 1024)
+                    while (true) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        out.write(buffer, 0, count)
+                        digest.update(buffer, 0, count)
+                        read += count
+                        if (total > 0) {
+                            val percent = (read * 100 / total).toInt()
+                            if (percent != shownPercent) {
+                                shownPercent = percent
+                                _updateInfo.update { it.copy(downloadProgress = percent / 100f) }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // A damaged or swapped download must never reach the installer.
+        val actual = digest.digest().joinToString("") { "%02x".format(it) }
+        if (expectedSha256 != null && actual != expectedSha256) {
+            android.util.Log.w("AppUpdate", "Update failed its hash check")
+            partFile().delete()
+            return false
+        }
+        apkFile().delete()
+        return partFile().renameTo(apkFile())
+    }
+
+    /** Opens Android's installer on the downloaded APK, asking for permission to first if needed. */
+    fun install(context: Context) {
+        val apk = apkFile()
+        if (!apk.exists()) {
+            _updateInfo.update { it.copy(apkReady = false) }
+            return
+        }
+        if (!context.packageManager.canRequestPackageInstalls()) {
+            _updateInfo.update { it.copy(needsInstallPermission = true) }
+            val settings = Intent(
+                android.provider.Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                Uri.parse("package:${context.packageName}"),
+            ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            runCatching { context.startActivity(settings) }
+            return
+        }
+        _updateInfo.update { it.copy(needsInstallPermission = false) }
+        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.provider", apk)
+        val intent = Intent(Intent.ACTION_VIEW)
+            .setDataAndType(uri, "application/vnd.android.package-archive")
+            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+        runCatching { context.startActivity(intent) }
+            .onFailure { _updateInfo.update { state -> state.copy(downloadFailed = true) } }
     }
 
     fun openUpdate(context: Context) {

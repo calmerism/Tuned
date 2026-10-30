@@ -263,6 +263,10 @@ fun MainShell(
     LaunchedEffect(selectedTab) { dockState.tabsCollapsed = false }
     val updateInfo by mainShellViewModel.updateInfo.collectAsStateWithLifecycle()
     val showUpdateBanner = updateInfo.isUpdateAvailable && !updateInfo.isDismissed
+    var showUpdateSheet by remember { mutableStateOf(false) }
+    if (showUpdateSheet) {
+        com.tuned.app.ui.common.UpdateSheet(mainShellViewModel.appUpdateManager) { showUpdateSheet = false }
+    }
 
     val backgroundColor = MaterialTheme.colorScheme.background
     // Unconditional remember keeps composition stable; usage gated below.
@@ -340,7 +344,7 @@ fun MainShell(
         ) {
             UpdatePromptCard(
                 version = updateInfo.latestVersion,
-                onUpdate = { mainShellViewModel.openUpdate(context) },
+                onUpdate = { showUpdateSheet = true },
                 onDismiss = { mainShellViewModel.dismissUpdate(updateInfo.latestVersion) },
             )
         }
@@ -371,8 +375,6 @@ private fun UpdatePromptCard(
     Surface(
         shape = RoundedCornerShape(20.dp),
         color = MaterialTheme.colorScheme.primaryContainer,
-        shadowElevation = 8.dp,
-        tonalElevation = 6.dp,
         modifier = Modifier.fillMaxWidth(),
     ) {
         Row(
@@ -394,7 +396,7 @@ private fun UpdatePromptCard(
                     color = MaterialTheme.colorScheme.onPrimaryContainer,
                 )
                 Text(
-                    text = androidx.compose.ui.res.stringResource(com.tuned.app.R.string.update_ready_to_install, version),
+                    text = androidx.compose.ui.res.stringResource(com.tuned.app.R.string.update_new, version),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onPrimaryContainer.copy(alpha = 0.85f),
                 )

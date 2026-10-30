@@ -81,7 +81,7 @@ android {
         // Each feature turns itself off while its value is empty.
         buildConfigField("String", "DISCORD_APPLICATION_ID", "\"${resolveSecret("DISCORD_APPLICATION_ID")}\"")
         buildConfigField("String", "JAM_SERVER_URL", "\"${resolveSecret("JAM_SERVER_URL")}\"")
-        buildConfigField("String", "UPDATE_GITHUB_REPO", "\"${resolveSecret("UPDATE_GITHUB_REPO")}\"")
+        buildConfigField("String", "UPDATE_GITHUB_REPO", "\"${resolveSecret("UPDATE_GITHUB_REPO").ifBlank { "calmerism/Tuned" }}\"")
 
         // Native secrets (addon client lock) live strictly in native .so via
         // SecretsBridge_generated.h (tools/generate_native_secrets.py).

@@ -655,6 +655,7 @@ class SettingsViewModel @Inject constructor(
         settingsPreferences.setLyricsFontScale(scale)
     }
     fun setCrossfadeEnabled(enabled: Boolean) = launchSettingsAction("update crossfade") { settingsPreferences.setCrossfadeEnabled(enabled) }
+    fun setAutoMixEnabled(enabled: Boolean) = launchSettingsAction("update automix") { settingsPreferences.setAutoMixEnabled(enabled) }
     fun setCrossfadeSeconds(seconds: Int) = launchSettingsAction("update crossfade duration") {
         settingsPreferences.setCrossfadeSeconds(seconds.coerceIn(1, 12))
     }

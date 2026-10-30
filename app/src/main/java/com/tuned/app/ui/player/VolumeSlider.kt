@@ -79,6 +79,7 @@ fun VolumeSlider(
     modifier: Modifier = Modifier,
     isTranslucent: Boolean = false,
     primaryColor: Color = MaterialTheme.colorScheme.primary,
+    fullWidth: Boolean = false,
 ) {
     val context = LocalContext.current
     val audioManager = remember(context) {
@@ -171,8 +172,7 @@ fun VolumeSlider(
         val containerShape = RoundedCornerShape(100)
         Row(
             modifier = modifier
-                .fillMaxWidth(0.78f)
-                .widthIn(max = 280.dp)
+                .then(if (fullWidth) Modifier.fillMaxWidth() else Modifier.fillMaxWidth(0.78f).widthIn(max = 280.dp))
                 .height(34.dp)
                 .then(
                     if (isGlassActive) {

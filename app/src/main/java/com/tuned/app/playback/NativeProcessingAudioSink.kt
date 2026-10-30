@@ -42,8 +42,16 @@ class NativeProcessingAudioSink(
     private val exclusiveUsb: ExclusiveUsbOutput? = null,
     /** Fork: AAudio exclusive (MMAP) output on the phone's own outputs. */
     private val internalDirect: InternalDirectOutput? = null,
+    /** Loudness for AutoMix and vocal reduction, on every decoded buffer before routing. */
+    private val inputStage: com.tuned.app.playback.analysis.PcmInputStage? = null,
+    /** The media volume, for USB routes where Android's mixer won't apply it. */
+    private val systemVolume: SystemVolumeGain? = null,
 ) : AudioSink {
     private var activeDelegate: DefaultAudioSink = fallbackDelegate
+    private var requestedParameters = PlaybackParameters.DEFAULT
+    private var tempoRouteStale = false
+    private var writableCopy: ByteBuffer? = null
+    private var writableSource: ByteBuffer? = null
     // Read on the main thread for the signal-path verdict, written on the
     // renderer thread — volatile so bypass/stale reads never go stale.
     @Volatile private var processingActive = false
@@ -117,6 +125,7 @@ class NativeProcessingAudioSink(
      * The converter / processed paths get the same EQ inside the native DSP.
      */
     private val directEq = com.tuned.app.playback.eq.DirectPcmEq()
+    private var inputStageBuffer: ByteBuffer? = null
     /** Buffer already equalised: Media3 retries the same object until consumed. */
     private var directEqBuffer: ByteBuffer? = null
 
@@ -187,8 +196,12 @@ class NativeProcessingAudioSink(
             onConfiguredFormat?.invoke(format.sampleRate, format.pcmEncoding, format.channelCount)
         }
         directEqBuffer = null
+        inputStageBuffer = null
+        // Encoded passthrough has no samples to read: the stage stands aside.
+        inputStage?.configure(0, 0, C.ENCODING_INVALID)
         if (format.sampleMimeType == MimeTypes.AUDIO_RAW && format.sampleRate > 0) {
             directEq.configure(format.sampleRate, format.channelCount, format.pcmEncoding)
+            inputStage?.configure(format.sampleRate, format.channelCount, format.pcmEncoding)
         }
 
         if (exclusiveWanted && internalDirect?.hasOpenStream() == true) {
@@ -347,7 +360,8 @@ class NativeProcessingAudioSink(
             return false
         }
 
-        if (!floatOutputDisabled &&
+        // Speed and pitch run in Sonic, which only the PCM16 delegate has.
+        if (!floatOutputDisabled && !tempoChanged() &&
             enhancedDelegate.getFormatSupport(floatFormat) != AudioSink.SINK_FORMAT_UNSUPPORTED
         ) {
             try {
@@ -468,12 +482,22 @@ class NativeProcessingAudioSink(
     }
 
     override fun handleBuffer(
-        buffer: ByteBuffer,
+        decoded: ByteBuffer,
         presentationTimeUs: Long,
         encodedAccessUnitCount: Int,
     ): Boolean {
+        if (tempoRouteStale) {
+            tempoRouteStale = false
+            rerouteForTempo()
+        }
+        val buffer = writableBuffer(decoded)
         maybeAdoptExclusiveUsb()
         maybeAdoptInternalDirect()
+        // Once per payload: Media3 resubmits the same buffer until it is consumed.
+        if (inputStageBuffer !== buffer) {
+            inputStage?.process(buffer, presentationTimeUs, runCatching { getCurrentPositionUs(false) }.getOrDefault(-1L))
+            inputStageBuffer = buffer
+        }
         if (directEqBuffer !== buffer && isDirectEqRoute()) {
             directEq.process(buffer)
             directEqBuffer = buffer
@@ -481,8 +505,33 @@ class NativeProcessingAudioSink(
         val consumed = handleRoutedBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
         // Decoder buffers are recycled objects: once consumed, the next
         // payload in the same object must be equalised again.
-        if (consumed) directEqBuffer = null
+        if (consumed) {
+            directEqBuffer = null
+            inputStageBuffer = null
+            lastGainBuffer = null
+            writableSource = null
+        }
         return consumed
+    }
+
+    /**
+     * MediaCodec hands out read-only PCM on many streams, and everything here that
+     * changes samples (vocal reduction, the direct EQ, software volume) silently does
+     * nothing to a read-only buffer. Those payloads get a writable copy, kept until
+     * consumed because Media3 resubmits the same buffer until then.
+     */
+    private fun writableBuffer(decoded: ByteBuffer): ByteBuffer {
+        if (!decoded.isReadOnly || configuredFormat?.sampleMimeType != MimeTypes.AUDIO_RAW) return decoded
+        val held = writableCopy
+        if (writableSource === decoded && held != null) return held
+        val copy = held?.takeIf { it.capacity() >= decoded.remaining() }
+            ?: ByteBuffer.allocateDirect(maxOf(decoded.remaining() * 2, MIN_WRITABLE_BYTES)).order(ByteOrder.nativeOrder())
+        copy.clear()
+        copy.put(decoded.duplicate())
+        copy.flip()
+        writableCopy = copy
+        writableSource = decoded
+        return copy
     }
 
     /** True when this buffer bypasses the native DSP (where the EQ otherwise runs). */
@@ -566,7 +615,9 @@ class NativeProcessingAudioSink(
      * passes untouched (bit-exact). Below unity — app volume, ducking, fades —
      * samples are scaled in software first, because a granted BIT_PERFECT
      * mixer bypass ignores AudioTrack volume: without this the volume keys
-     * would go dead the moment raw output engages. Any scaling is observed
+     * would go dead the moment raw output engages. The same bypass skips the
+     * media volume, so a granted bypass scales by that too: otherwise the DAC
+     * jumps to full scale when it engages. Any scaling is observed
      * via [currentVolume], so the signal-path verdict honestly fails while
      * attenuated and passes again at unity.
      */
@@ -575,7 +626,7 @@ class NativeProcessingAudioSink(
         presentationTimeUs: Long,
         encodedAccessUnitCount: Int,
     ): Boolean {
-        val gain = lastVolume
+        val gain = lastVolume * bypassSystemGain()
         val needsGain = bitPerfectRequested && bitPerfectAtConfigure && hasConfigured &&
             gain < 1f - 1e-6f && gain >= 0f && buffer.hasRemaining()
         if (!needsGain) {
@@ -759,12 +810,29 @@ class NativeProcessingAudioSink(
         }
 
     override fun setPlaybackParameters(playbackParameters: PlaybackParameters) {
+        val wasChanged = tempoChanged()
+        requestedParameters = playbackParameters
         enhancedDelegate.setPlaybackParameters(playbackParameters)
         fallbackDelegate.setPlaybackParameters(playbackParameters)
+        // Only on the way in: going back to 1x stays on this route until the next
+        // song, so AutoMix can ease a song to normal speed without a dropout.
+        if (!wasChanged && tempoChanged()) tempoRouteStale = true
     }
 
-    override fun getPlaybackParameters(): PlaybackParameters =
-        activeDelegate.getPlaybackParameters()
+    // Not the delegate's answer: the float delegate has no Sonic stage and always
+    // says 1x, which would send the player, and the controls, back to normal speed.
+    override fun getPlaybackParameters(): PlaybackParameters = requestedParameters
+
+    private fun tempoChanged() = requestedParameters.speed != 1f || requestedParameters.pitch != 1f
+
+    /** Moves the open stream to the route that suits the new speed and pitch. */
+    private fun rerouteForTempo() {
+        val format = configuredFormat ?: return
+        if (!hasConfigured || usbExclusive) return
+        if (!internalActive && !(processingActive && activeDelegate === enhancedDelegate)) return
+        safeFlush(activeDelegate)
+        configure(format, configuredBufferSize, configuredOutputChannels)
+    }
 
     override fun setSkipSilenceEnabled(skipSilenceEnabled: Boolean) {
         // Silence-skipping deletes samples — invisible to the signal-path
@@ -920,11 +988,7 @@ class NativeProcessingAudioSink(
         }
         // Tempo/pitch lives in Media3's Sonic stage inside DefaultAudioSink,
         // which this path skips: never engage unless playback is at 1x.
-        if (runCatching { activeDelegate.getPlaybackParameters() }.getOrNull()
-                ?.let { it.speed != 1f || it.pitch != 1f } == true
-        ) {
-            return false
-        }
+        if (tempoChanged()) return false
         val opened = runCatching { output.configure(format, bitDepthHintProvider?.invoke()) }.getOrDefault(false)
         if (!opened) {
             internalStartFailed = true
@@ -1019,9 +1083,9 @@ class NativeProcessingAudioSink(
         if (output.requiresResampling()) {
             return handleInternalConvertedBuffer(buffer, presentationTimeUs, output, fmt)
         }
-        // App-side gain only (fades, focus ducking): the system volume is
-        // still applied by Android on this route.
-        val gain = lastVolume
+        // App-side gain (fades, focus ducking). Android applies the system volume
+        // here, except on USB, where its HAL has no volume for a direct stream.
+        val gain = lastVolume * internalUsbSystemGain(output)
         if (gain < 1f - 1e-6f && gain >= 0f && buffer.hasRemaining()) {
             if (lastGainBuffer !== buffer) {
                 scalePcmInPlace(buffer, buffer.position(), buffer.limit(), fmt.pcmEncoding, gain)
@@ -1055,7 +1119,7 @@ class NativeProcessingAudioSink(
         if (exclusiveConvertSourceHz != source.sampleRate || processor.nativeOutputSampleRate != target) {
             if (!setupExclusiveConverter(source, target)) return false
         }
-        val gain = lastVolume
+        val gain = lastVolume * internalUsbSystemGain(output)
         processor.queueInput(buffer.duplicate())
         buffer.position(buffer.limit())
         var guard = 0
@@ -1439,8 +1503,19 @@ class NativeProcessingAudioSink(
     }
 
     /** Last gain reaching the output (1 = unity). */
-    fun currentVolume(): Float =
-        if (usbExclusive) exclusiveUsb?.softwareGain() ?: lastVolume else lastVolume
+    fun currentVolume(): Float = when {
+        usbExclusive -> exclusiveUsb?.softwareGain() ?: lastVolume
+        internalActive -> internalDirect?.let { lastVolume * internalUsbSystemGain(it) } ?: lastVolume
+        bitPerfectRequested && bitPerfectAtConfigure -> lastVolume * bypassSystemGain()
+        else -> lastVolume
+    }
+
+    /** The media volume while Android has granted the mixer bypass, else unity: Android applies it. */
+    private fun bypassSystemGain(): Float =
+        if (usbOutput?.holdsBypass() == true) systemVolume?.linear ?: 1f else 1f
+
+    private fun internalUsbSystemGain(output: InternalDirectOutput): Float =
+        if (output.session.value?.route == InternalRoute.USB) systemVolume?.linear ?: 1f else 1f
 
     /**
      * Reconciles platform gain after a (re)configure: unity on the direct
@@ -1474,6 +1549,8 @@ class NativeProcessingAudioSink(
 
     override fun flush() {
         directEq.reset()
+        inputStage?.reset()
+        inputStageBuffer = null
         directEqBuffer = null
         clearPending()
         clearEndOfStream()
@@ -1514,6 +1591,8 @@ class NativeProcessingAudioSink(
 
     override fun reset() {
         directEq.reset()
+        inputStage?.reset()
+        inputStageBuffer = null
         directEqBuffer = null
         usbOutput?.setFormat(null)
         if (usbExclusive && exclusiveWanted) {
@@ -1732,6 +1811,7 @@ class NativeProcessingAudioSink(
         .build()
 
     private fun clearPending() {
+        writableSource = null
         pendingInputLimit = 0
         pendingOutput = null
         lastGainBuffer = null
@@ -1747,6 +1827,7 @@ class NativeProcessingAudioSink(
     }
 
     private companion object {
+        private const val MIN_WRITABLE_BYTES = 32_768
         const val TAG = "NativeAudioSink"
         const val MICROS_PER_SECOND = 1_000_000L
         val SUPPORTED_ENCODINGS = setOf(

@@ -128,6 +128,12 @@ data class MiscSettings(
     val crossfadeEnabled: Boolean = false,
     /** Crossfade length in seconds; kept within the native settings slider range. */
     val crossfadeSeconds: Int = 5,
+    /** With crossfade on, AutoMix picks when and how long to blend from the music itself. */
+    val autoMixEnabled: Boolean = false,
+    /** When the queue runs out, keep playing similar songs (Apple's AutoPlay). */
+    val autoPlayEnabled: Boolean = true,
+    /** Vibrate in time with the music's beat (Apple's Music Haptics). */
+    val musicHapticsEnabled: Boolean = false,
     /** When true (default), uses the multi-layer dynamic wavy seekbar.
      *  When false, uses the classic standard progress slider in the player tab. */
     val wavySeekbarEnabled: Boolean = true,
@@ -284,6 +290,9 @@ class SettingsPreferences @Inject constructor(
         val LYRICS_FONT_SCALE = floatPreferencesKey("lw_lyrics_font_scale")
         val CROSSFADE_ENABLED = booleanPreferencesKey("lw_crossfade_enabled")
         val CROSSFADE_SECONDS = intPreferencesKey("lw_crossfade_seconds")
+        val AUTOMIX_ENABLED = booleanPreferencesKey("tuned_automix_enabled")
+        val AUTOPLAY_ENABLED = booleanPreferencesKey("tuned_autoplay_enabled")
+        val MUSIC_HAPTICS_ENABLED = booleanPreferencesKey("tuned_music_haptics_enabled")
         val WAVY_SEEKBAR_ENABLED = booleanPreferencesKey("lw_wavy_seekbar_enabled")
         val ROTATING_BACKGROUND_ENABLED = booleanPreferencesKey("lw_rotating_background_enabled")
         val LYRICS_ROTATING_BACKGROUND_ENABLED = booleanPreferencesKey("lw_lyrics_rotating_background_enabled")
@@ -365,6 +374,9 @@ class SettingsPreferences @Inject constructor(
                 lyricsFontScale = (p.readSafely(Keys.LYRICS_FONT_SCALE) ?: 1.0f).coerceIn(0.7f, 1.5f),
                 crossfadeEnabled = p.readSafely(Keys.CROSSFADE_ENABLED) ?: false,
                 crossfadeSeconds = (p.readSafely(Keys.CROSSFADE_SECONDS) ?: 5).coerceIn(1, 12),
+                autoMixEnabled = p.readSafely(Keys.AUTOMIX_ENABLED) ?: false,
+                autoPlayEnabled = p.readSafely(Keys.AUTOPLAY_ENABLED) ?: true,
+                musicHapticsEnabled = p.readSafely(Keys.MUSIC_HAPTICS_ENABLED) ?: false,
                 wavySeekbarEnabled = p.readSafely(Keys.WAVY_SEEKBAR_ENABLED) ?: true,
                 rotatingBackgroundEnabled = p.readSafely(Keys.ROTATING_BACKGROUND_ENABLED) ?: true,
                 lyricsRotatingBackgroundEnabled = p.readSafely(Keys.LYRICS_ROTATING_BACKGROUND_ENABLED) ?: true,
@@ -629,6 +641,18 @@ class SettingsPreferences @Inject constructor(
 
     suspend fun setCrossfadeEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.CROSSFADE_ENABLED] = enabled }
+    }
+
+    suspend fun setMusicHapticsEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.MUSIC_HAPTICS_ENABLED] = enabled }
+    }
+
+    suspend fun setAutoPlayEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTOPLAY_ENABLED] = enabled }
+    }
+
+    suspend fun setAutoMixEnabled(enabled: Boolean) {
+        dataStore.edit { it[Keys.AUTOMIX_ENABLED] = enabled }
     }
 
     suspend fun setCrossfadeSeconds(seconds: Int) {

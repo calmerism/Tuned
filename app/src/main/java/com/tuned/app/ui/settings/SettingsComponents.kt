@@ -515,6 +515,8 @@ internal fun SettingsToggleCard(
 internal fun CrossfadeDurationRow(
     seconds: Int,
     onSecondsChange: (Int) -> Unit,
+    autoMix: Boolean = false,
+    onAutoMixChange: (Boolean) -> Unit = {},
     position: GroupPosition = GroupPosition.SINGLE,
     isHighlighted: Boolean = false,
 ) {
@@ -537,6 +539,27 @@ internal fun CrossfadeDurationRow(
             .settingHighlightGlow(isHighlighted = isHighlighted, shape = shape),
     ) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 14.dp)) {
+            // Crossfade blends for a set time; AutoMix picks the moment and length from the music.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.padding(bottom = 12.dp)) {
+                androidx.compose.material3.FilterChip(
+                    selected = !autoMix,
+                    onClick = { onAutoMixChange(false) },
+                    label = { Text(stringResource(R.string.settings_crossfade)) },
+                )
+                androidx.compose.material3.FilterChip(
+                    selected = autoMix,
+                    onClick = { onAutoMixChange(true) },
+                    label = { Text(stringResource(R.string.settings_automix)) },
+                )
+            }
+            if (autoMix) {
+                Text(
+                    stringResource(R.string.settings_automix_detail),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                return@Column
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconBadge(
                     Icons.Filled.Tune,

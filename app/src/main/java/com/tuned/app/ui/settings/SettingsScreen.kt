@@ -298,6 +298,10 @@ fun SettingsScreen(
     val internalDirectAvailability by viewModel.internalDirectAvailability.collectAsStateWithLifecycle()
     val loudness by viewModel.loudness.collectAsStateWithLifecycle()
     val updateInfo by viewModel.updateInfo.collectAsStateWithLifecycle()
+    var showUpdateSheet by remember { mutableStateOf(false) }
+    if (showUpdateSheet) {
+        com.tuned.app.ui.common.UpdateSheet(viewModel.appUpdateManager) { showUpdateSheet = false }
+    }
     val discordPresenceEnabled by viewModel.discordPresenceEnabled.collectAsStateWithLifecycle()
     val isLastFmConnected by viewModel.isLastFmConnected.collectAsStateWithLifecycle()
     val hasApiKey by viewModel.hasApiKey.collectAsStateWithLifecycle()
@@ -319,7 +323,6 @@ fun SettingsScreen(
         }
     }
     var showQualityDialog by remember { mutableStateOf(false) }
-    var showLicences by remember { mutableStateOf(false) }
     var showDownloadQualityDialog by remember { mutableStateOf(false) }
     var showEqSheet by remember { mutableStateOf(false) }
     var showAutoEq by remember { mutableStateOf(false) }
@@ -629,9 +632,16 @@ fun SettingsScreen(
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 SectionLabel("App")
-                                SettingsGroup(rowCount = 2) { index, position ->
-                                    when (index) {
-                                        0 -> SettingsActionCard(
+                                SettingsGroup(rowCount = if (AppUpdateManager.isEnabled) 3 else 2) { index, position ->
+                                    when (if (AppUpdateManager.isEnabled) index else index + 1) {
+                                        0 -> CheckUpdatesRow(
+                                            info = updateInfo,
+                                            position = position,
+                                            isHighlighted = false,
+                                            onOpen = { showUpdateSheet = true },
+                                            onCheck = viewModel::checkForUpdates,
+                                        )
+                                        1 -> SettingsActionCard(
                                             icon = Icons.Filled.Extension,
                                             iconContainer = MaterialTheme.colorScheme.primaryContainer,
                                             iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -728,13 +738,12 @@ fun SettingsScreen(
                                 icon = Icons.Filled.GraphicEq,
                                 iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
-                                title = stringResource(R.string.settings_crossfade),
-                                subtitle = if (misc.crossfadeEnabled && misc.isBitPerfectEnabled) {
-                                    "Off while Bit-perfect is on"
-                                } else if (misc.crossfadeEnabled) {
-                                    "${misc.crossfadeSeconds} seconds"
-                                } else {
-                                    "Fade one song into the next"
+                                title = stringResource(R.string.settings_song_transitions),
+                                subtitle = when {
+                                    misc.crossfadeEnabled && misc.isBitPerfectEnabled -> stringResource(R.string.settings_transitions_bitperfect)
+                                    misc.crossfadeEnabled && misc.autoMixEnabled -> stringResource(R.string.settings_automix)
+                                    misc.crossfadeEnabled -> stringResource(R.string.settings_transitions_crossfade_seconds, misc.crossfadeSeconds)
+                                    else -> stringResource(R.string.settings_transitions_off)
                                 },
                                 checked = misc.crossfadeEnabled,
                                 onCheckedChange = viewModel::setCrossfadeEnabled,
@@ -745,6 +754,8 @@ fun SettingsScreen(
                                 CrossfadeDurationRow(
                                     seconds = misc.crossfadeSeconds,
                                     onSecondsChange = viewModel::setCrossfadeSeconds,
+                                    autoMix = misc.autoMixEnabled,
+                                    onAutoMixChange = viewModel::setAutoMixEnabled,
                                     position = position,
                                     isHighlighted = (highlightedSettingId == "audio.crossfade_duration"),
                                 )
@@ -1875,13 +1886,20 @@ fun SettingsScreen(
                                 }
                             }
                         }
-                        // Bug-report logs and the licence notice, the last of what the About page held.
+                        // Updates and bug-report logs.
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                                 SectionLabel(stringResource(R.string.settings_section_about))
-                                SettingsGroup(rowCount = 2) { index, position ->
-                                    when (index) {
-                                        0 -> SettingsActionCard(
+                                SettingsGroup(rowCount = if (AppUpdateManager.isEnabled) 2 else 1) { index, position ->
+                                    when (if (AppUpdateManager.isEnabled) index else index + 1) {
+                                        0 -> CheckUpdatesRow(
+                                            info = updateInfo,
+                                            position = position,
+                                            isHighlighted = (highlightedSettingId == "about.check_updates"),
+                                            onOpen = { showUpdateSheet = true },
+                                            onCheck = viewModel::checkForUpdates,
+                                        )
+                                        else -> SettingsActionCard(
                                             icon = Icons.Filled.Code,
                                             iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                             iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1890,16 +1908,6 @@ fun SettingsScreen(
                                             onClick = { viewModel.exportDiagnostics() },
                                             position = position,
                                             isHighlighted = (highlightedSettingId == "about.diagnostics"),
-                                        )
-                                        else -> SettingsActionCard(
-                                            icon = Icons.Filled.Info,
-                                            iconContainer = MaterialTheme.colorScheme.secondaryContainer,
-                                            iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
-                                            title = stringResource(R.string.about_licences),
-                                            subtitle = stringResource(R.string.about_licences_version, appVersionName(context)),
-                                            onClick = { showLicences = true },
-                                            position = position,
-                                            isHighlighted = (highlightedSettingId == "about.source_code"),
                                         )
                                     }
                                 }
@@ -1921,14 +1929,6 @@ fun SettingsScreen(
     }
 
     // -- Open-source licences --
-    if (showLicences) {
-        AlertDialog(
-            onDismissRequest = { showLicences = false },
-            title = { Text(stringResource(R.string.about_licences)) },
-            text = { Text(stringResource(R.string.about_licences_text)) },
-            confirmButton = { TextButton(onClick = { showLicences = false }) { Text(stringResource(R.string.common_close)) } },
-        )
-    }
 
     // -- Clear-all-data confirm --
     if (state.showClearAllConfirm) {
@@ -2679,4 +2679,30 @@ internal fun startActivitySafely(context: android.content.Context, intent: Inten
     } catch (_: LinkageError) {
         false
     }
+}
+
+/** The update row: opens the update when there is one, otherwise checks for one. */
+@Composable
+private fun CheckUpdatesRow(
+    info: com.tuned.app.data.update.UpdateInfo,
+    position: GroupPosition,
+    isHighlighted: Boolean,
+    onOpen: () -> Unit,
+    onCheck: () -> Unit,
+) {
+    val context = LocalContext.current
+    SettingsActionCard(
+        icon = Icons.Filled.CloudDownload,
+        iconContainer = MaterialTheme.colorScheme.primaryContainer,
+        iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+        title = stringResource(R.string.settings_check_updates),
+        subtitle = when {
+            info.isChecking -> stringResource(R.string.update_checking)
+            info.isUpdateAvailable -> stringResource(R.string.update_new, info.latestVersion)
+            else -> stringResource(R.string.update_installed, appVersionName(context))
+        },
+        onClick = { if (info.isUpdateAvailable) onOpen() else onCheck() },
+        position = position,
+        isHighlighted = isHighlighted,
+    )
 }

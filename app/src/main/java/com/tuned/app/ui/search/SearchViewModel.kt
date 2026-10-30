@@ -157,7 +157,7 @@ class SearchViewModel @Inject constructor(
         searchQueueJob?.cancel()
         val tab = _uiState.value.tab
         when (tab) {
-            SearchTab.TRACKS -> {
+            SearchTab.TRACKS, SearchTab.VIDEOS -> {
                 val selected = PlayableTrack(
                     title = item.name,
                     artist = item.artist.orEmpty(),

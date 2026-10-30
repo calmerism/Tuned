@@ -77,6 +77,8 @@ class ExclusiveUsbOutput @Inject constructor(
         private set
     @Volatile private var lastAppliedCombined = Float.NaN
     private var volumeProbed = false
+    @Volatile private var claimLevel = 1f
+    @Volatile private var claimSettlesAtMs = 0L
     @Volatile private var lastNonMaxListeningGain = Float.NaN
     @Volatile private var ignoreStreamMusicMax = false
     /** Fork setting: never let the DAC's Feature Unit own the listening level. */
@@ -95,6 +97,25 @@ class ExclusiveUsbOutput @Inject constructor(
         clearBlockedDevices()
         lastNonMaxListeningGain = volumePrefs.getFloat(KEY_LAST_NON_MAX_GAIN, Float.NaN)
         rememberStreamGain(readStreamMusicGain())
+        recoverDacLeftClaimed()
+    }
+
+    /**
+     * The process died holding the DAC, so nothing handed it back and Android has no
+     * driver on it: no app can play through it until it is replugged. Fix that here.
+     */
+    private fun recoverDacLeftClaimed() {
+        if (!volumePrefs.getBoolean(KEY_DAC_CLAIMED, false)) return
+        volumePrefs.edit().putBoolean(KEY_DAC_CLAIMED, false).apply()
+        Thread({
+            synchronized(lock) {
+                val manager = appContext.getSystemService(Context.USB_SERVICE) as UsbManager
+                manager.deviceList.values
+                    .filter { dev -> (0 until dev.interfaceCount).any { dev.getInterface(it).interfaceClass == UsbConstants.USB_CLASS_AUDIO } }
+                    .filter { manager.hasPermission(it) }
+                    .forEach { runCatching { usbAudio.handBackToAndroid(it) } }
+            }
+        }, "ExclusiveUsbRecovery").start()
     }
 
     private val volumeReceiver = object : BroadcastReceiver() {
@@ -261,6 +282,7 @@ class ExclusiveUsbOutput @Inject constructor(
 
     fun syncListeningGain() {
         val stream = readStreamMusicGain() ?: return
+        if (holdLevelThroughRouteChange(stream)) return
         // While the attach-time 100% pin is held off with the remembered
         // level, keep ignoring pinned max readings. The next real sub-max
         // change (a volume key press) ends the hold and applies normally.
@@ -528,6 +550,10 @@ class ExclusiveUsbOutput @Inject constructor(
         stopStreamLocked()
         usbAudio.closeDevice()
         connection = null
+        if (connection == null) {
+            claimLevel = listeningGainForDac()
+            claimSettlesAtMs = SystemClock.elapsedRealtime() + ROUTE_SETTLE_MS
+        }
         val info = usbAudio.openDevice(usbDevice)
             ?: return failLocked("openDevice failed" + (usbAudio.lastOpenError?.let { ": $it" } ?: ""))
         val hwRates = usbAudio.querySupportedSampleRates()
@@ -703,8 +729,9 @@ class ExclusiveUsbOutput @Inject constructor(
         )
 
         ensureVolumeObserverLocked()
+        volumePrefs.edit().putBoolean(KEY_DAC_CLAIMED, true).apply()
         rememberStreamGain(readStreamMusicGain())
-        listeningGain = listeningGainForDac()
+        listeningGain = minOf(listeningGainForDac(), claimLevel)
         lastAppliedCombined = Float.NaN
         applyVolumeLocked()
         Log.i(
@@ -806,6 +833,22 @@ class ExclusiveUsbOutput @Inject constructor(
             lastNonMaxListeningGain = gain
             runCatching { volumePrefs.edit().putFloat(KEY_LAST_NON_MAX_GAIN, gain).apply() }
         }
+    }
+
+    /**
+     * Claiming the DAC unbinds Android's USB driver, so Android moves media to the
+     * speaker and the volume reading jumps to the speaker's level with no key press.
+     * Put the reading back so the DAC stays where it was and the keys carry on from there.
+     */
+    private fun holdLevelThroughRouteChange(stream: Float): Boolean {
+        if (SystemClock.elapsedRealtime() >= claimSettlesAtMs) return false
+        if (stream <= claimLevel + ROUTE_JUMP_MARGIN) return false
+        val manager = audioManager ?: return false
+        val max = runCatching { manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }.getOrDefault(0)
+        val index = kotlin.math.round(claimLevel * max).toInt()
+        runCatching { manager.setStreamVolume(AudioManager.STREAM_MUSIC, index, 0) }
+        Log.i(TAG, "held the DAC at $claimLevel through a route change (reading was $stream)")
+        return true
     }
 
     private fun listeningGainForDac(): Float {
@@ -937,6 +980,7 @@ class ExclusiveUsbOutput @Inject constructor(
         if (closeDevice) {
             runCatching { usbAudio.closeDevice() }
             connection = null
+            volumePrefs.edit().putBoolean(KEY_DAC_CLAIMED, false).apply()
         }
         featureVolume = null
         featureVolumeAttached = false
@@ -975,6 +1019,9 @@ class ExclusiveUsbOutput @Inject constructor(
         const val VOLUME_CHANGED_ACTION = "android.media.VOLUME_CHANGED_ACTION"
         const val EXTRA_VOLUME_STREAM_TYPE = "android.media.EXTRA_VOLUME_STREAM_TYPE"
         const val KEY_LAST_NON_MAX_GAIN = "last_non_max_stream_gain"
+        const val KEY_DAC_CLAIMED = "dac_claimed"
+        const val ROUTE_SETTLE_MS = 5_000L
+        const val ROUTE_JUMP_MARGIN = 0.01f
         const val KEY_BLOCK_PREFIX = "blocked_dac_"
         const val PLL_SETTLE_MS = 50L
         const val CLOCK_VALID_TRIES = 40
@@ -1082,10 +1129,13 @@ class ExclusiveUsbOutput @Inject constructor(
  */
 internal fun attachMaxPinFallbackGain(streamGain: Float, rememberedGain: Float): Float? {
     if (streamGain < ATTACH_MAX_PIN_GAIN) return null
-    if (!rememberedGain.isFinite()) return null
-    if (rememberedGain < MIN_REMEMBERED_GAIN || rememberedGain > ATTACH_MAX_PIN_GAIN) return null
+    if (!rememberedGain.isFinite()) return FIRST_ATTACH_GAIN
+    if (rememberedGain < MIN_REMEMBERED_GAIN || rememberedGain > ATTACH_MAX_PIN_GAIN) return FIRST_ATTACH_GAIN
     return rememberedGain
 }
+
+/** With no level to go on, a pinned reading must not mean full scale in someone's ears. */
+internal const val FIRST_ATTACH_GAIN = 0.3f
 
 /** Raw readings at/above this are the attach-time pin, not a chosen level. */
 private const val ATTACH_MAX_PIN_GAIN = 0.999f

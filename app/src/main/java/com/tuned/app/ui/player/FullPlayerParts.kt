@@ -1,6 +1,7 @@
 @file:OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 package com.tuned.app.ui.player
 
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.layout.layout
 import com.tuned.app.playback.isSpatialAudioCodec
@@ -629,6 +630,11 @@ internal fun NowPlayingArtworkStage(
     onCanvasAspectChanged: (Float) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val autoMixTransition by player.autoMixTransition.collectAsStateWithLifecycle()
+    val autoMixProgress = rememberAutoMixProgress(autoMixTransition)
+    // The cover on screen when a blend starts, which can differ from the track's own artwork.
+    var settledCover by remember { mutableStateOf(coverUrl) }
+    if (autoMixTransition == null && coverUrl != null && settledCover != coverUrl) settledCover = coverUrl
     var isArtworkDragging by remember(track.videoId, track.title) { mutableStateOf(false) }
     var artworkDragX by remember(track.videoId, track.title) { mutableFloatStateOf(0f) }
     var seekOverlayDirection by remember(track.videoId, track.title) { mutableStateOf<SeekDirection?>(null) }
@@ -790,6 +796,7 @@ internal fun NowPlayingArtworkStage(
                     },
             ) {
                 Box(Modifier.fillMaxSize()) {
+                    Box(Modifier.fillMaxSize().autoMixIncomingCover(autoMixProgress)) {
                     PlayerArtwork(
                         track = track,
                         coverUrl = coverUrl,
@@ -803,6 +810,8 @@ internal fun NowPlayingArtworkStage(
                         pausedForTransition = pausedForTransition,
                         onAspectRatioChanged = onCanvasAspectChanged,
                     )
+                    }
+                    AutoMixArtworkBlend(autoMixTransition, settledCover.takeIf { it != coverUrl }, autoMixProgress)
                 }
             }
         }

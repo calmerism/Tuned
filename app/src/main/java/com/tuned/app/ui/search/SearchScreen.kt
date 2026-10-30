@@ -55,6 +55,7 @@ import androidx.compose.material.icons.filled.GraphicEq
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.MusicNote
+import androidx.compose.material.icons.filled.MusicVideo
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PersonAdd
 import androidx.compose.material.icons.filled.PersonRemove
@@ -474,7 +475,7 @@ fun SearchScreen(
                                     ),
                                 ) {
                                     if (topResult != null && state.tab != SearchTab.USERS) {
-                                        val isTopPlaying = (state.tab == SearchTab.TRACKS || state.tab == SearchTab.PODCASTS) && playbackState.isPlaying &&
+                                        val isTopPlaying = (state.tab == SearchTab.TRACKS || state.tab == SearchTab.VIDEOS || state.tab == SearchTab.PODCASTS) && playbackState.isPlaying &&
                                             playbackState.current?.title.equals(topResult.name, ignoreCase = true) &&
                                             (topResult.artist.isNullOrBlank() || playbackState.current?.artist.equals(topResult.artist, ignoreCase = true))
 
@@ -492,11 +493,11 @@ fun SearchScreen(
                                                     }
                                                 },
                                                 onLongClick = {
-                                                    if (state.tab == SearchTab.TRACKS) miniTrayItem = topResult
+                                                    if (state.tab == SearchTab.TRACKS || state.tab == SearchTab.VIDEOS) miniTrayItem = topResult
                                                 },
                                                 onMenu = {
                                                     menuTarget = when (state.tab) {
-                                                        SearchTab.TRACKS, SearchTab.PODCASTS -> TrackMenuTarget.Track(topResult.name, topResult.artist.orEmpty(), topResult.url)
+                                                        SearchTab.TRACKS, SearchTab.VIDEOS, SearchTab.PODCASTS -> TrackMenuTarget.Track(topResult.name, topResult.artist.orEmpty(), topResult.url)
                                                         SearchTab.ARTISTS -> TrackMenuTarget.Artist(topResult.name, topResult.url)
                                                         SearchTab.ALBUMS -> TrackMenuTarget.Album(topResult.name, topResult.artist.orEmpty(), topResult.url)
                                                         SearchTab.PLAYLISTS, SearchTab.USERS -> null
@@ -512,7 +513,7 @@ fun SearchScreen(
                                         key = { it.entityId ?: it.url.ifBlank { it.name + it.artist.orEmpty() } },
                                         contentType = { "search_result" },
                                     ) { item ->
-                                        val isItemPlaying = (state.tab == SearchTab.TRACKS || state.tab == SearchTab.PODCASTS) && playbackState.isPlaying &&
+                                        val isItemPlaying = (state.tab == SearchTab.TRACKS || state.tab == SearchTab.VIDEOS || state.tab == SearchTab.PODCASTS) && playbackState.isPlaying &&
                                             playbackState.current?.title.equals(item.name, ignoreCase = true) &&
                                             (item.artist.isNullOrBlank() || playbackState.current?.artist.equals(item.artist, ignoreCase = true))
 
@@ -529,13 +530,13 @@ fun SearchScreen(
                                                 }
                                             },
                                             onLongClick = {
-                                                if (state.tab == SearchTab.TRACKS) {
+                                                if (state.tab == SearchTab.TRACKS || state.tab == SearchTab.VIDEOS) {
                                                     miniTrayItem = item
                                                 }
                                             },
                                             onMenu = {
                                                 menuTarget = when (state.tab) {
-                                                    SearchTab.TRACKS, SearchTab.PODCASTS -> TrackMenuTarget.Track(item.name, item.artist.orEmpty(), item.url)
+                                                    SearchTab.TRACKS, SearchTab.VIDEOS, SearchTab.PODCASTS -> TrackMenuTarget.Track(item.name, item.artist.orEmpty(), item.url)
                                                     SearchTab.ARTISTS -> TrackMenuTarget.Artist(item.name, item.url)
                                                     SearchTab.ALBUMS -> TrackMenuTarget.Album(item.name, item.artist.orEmpty(), item.url)
                                                     SearchTab.PLAYLISTS, SearchTab.USERS -> null
@@ -629,6 +630,7 @@ private fun TopResultCard(
         ) {
             val fallback = when (tab) {
                 SearchTab.TRACKS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote
+                SearchTab.VIDEOS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicVideo
                 SearchTab.PODCASTS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.Mic
                 SearchTab.ARTISTS -> Icons.Filled.Person
                 SearchTab.ALBUMS -> Icons.Filled.Album
@@ -668,6 +670,7 @@ private fun TopResultCard(
                 Text(
                     when (tab) {
                         SearchTab.TRACKS -> "TOP SONG"
+                        SearchTab.VIDEOS -> "TOP VIDEO"
                         SearchTab.PODCASTS -> "TOP PODCAST"
                         SearchTab.ARTISTS -> "TOP ARTIST"
                         SearchTab.ALBUMS -> "TOP ALBUM"
@@ -689,7 +692,7 @@ private fun TopResultCard(
                     modifier = Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 1500),
                 )
                 val subtitle = when (tab) {
-                    SearchTab.TRACKS -> item.artist.orEmpty()
+                    SearchTab.TRACKS, SearchTab.VIDEOS -> item.artist.orEmpty()
                     SearchTab.PODCASTS -> item.artist.orEmpty().ifBlank { item.subtitle.orEmpty() }
                     SearchTab.ALBUMS -> item.artist.orEmpty()
                     SearchTab.PLAYLISTS -> item.subtitle.orEmpty()
@@ -925,7 +928,7 @@ private fun SearchResultRow(
             .combinedClickable(
                 enabled = tab != SearchTab.USERS,
                 onClick = onClick,
-                onLongClick = if (tab == SearchTab.TRACKS) onLongClick else onMenu,
+                onLongClick = if (tab == SearchTab.TRACKS || tab == SearchTab.VIDEOS) onLongClick else onMenu,
             )
             // Artwork on the screen margin, in line with the header's title and field.
             .padding(start = Keyline.margin, end = 4.dp, top = 6.dp, bottom = 6.dp),
@@ -933,6 +936,7 @@ private fun SearchResultRow(
     ) {
         val fallback = when (tab) {
             SearchTab.TRACKS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicNote
+            SearchTab.VIDEOS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.MusicVideo
             SearchTab.PODCASTS -> if (isPlaying) Icons.Filled.GraphicEq else Icons.Filled.Mic
             SearchTab.ARTISTS -> Icons.Filled.Person
             SearchTab.ALBUMS -> Icons.Filled.Album
@@ -972,7 +976,7 @@ private fun SearchResultRow(
                 overflow = TextOverflow.Ellipsis,
             )
             val subtitle = when (tab) {
-                SearchTab.TRACKS -> item.artist.orEmpty()
+                SearchTab.TRACKS, SearchTab.VIDEOS -> item.artist.orEmpty()
                 SearchTab.PODCASTS -> item.artist.orEmpty().ifBlank { item.subtitle.orEmpty() }
                 SearchTab.ALBUMS -> item.subtitle ?: item.artist.orEmpty()
                 SearchTab.PLAYLISTS -> item.subtitle.orEmpty()
@@ -1012,6 +1016,7 @@ private fun SearchFilterPills(
 ) {
     val tabs = listOf(
         SearchTab.TRACKS to R.string.search_tab_tracks,
+        SearchTab.VIDEOS to R.string.search_tab_videos,
         SearchTab.PODCASTS to R.string.search_tab_podcasts,
         SearchTab.ARTISTS to R.string.search_tab_artists,
         SearchTab.ALBUMS to R.string.search_tab_albums,

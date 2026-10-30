@@ -548,23 +548,6 @@ object SettingsSearchIndex {
             )
             add(
                 SettingsEntry(
-                    id = "appearance.lyrics_animation",
-                    title = "Lyrics animation style",
-                    subtitle = "Karaoke glow, sliding, fade, bounce, or modern full-screen UI",
-                    keywords = listOf(
-                        "lyrics animation", "karaoke", "lyrics style", "modern lyrics", "lyrics ui",
-                        "smooth scroll", "glow lyrics", "lyrics presentation"
-                    ),
-                    icon = Icons.Filled.Lyrics,
-                    iconContainer = { MaterialTheme.colorScheme.tertiaryContainer },
-                    iconTint = { MaterialTheme.colorScheme.onTertiaryContainer },
-                    parentTab = SettingsTab.APPEARANCE,
-                    section = "Experimental & Features",
-                    type = EntryType.ACTION,
-                )
-            )
-            add(
-                SettingsEntry(
                     id = "appearance.wavy_seekbar",
                     title = "Fluid wavy seekbar",
                     subtitle = "Multi-layer fluid wavy progress slider for track playback",
@@ -1233,13 +1216,10 @@ object SettingsSearchIndex {
             )
             add(
                 SettingsEntry(
-                    id = "about.diagnostics",
-                    title = "Export diagnostics & logs",
-                    subtitle = "Export diagnostic report, crash logs, and hardware device info",
-                    keywords = listOf(
-                        "diagnostics", "logs", "crash logs", "debug info", "report issue", "bug report",
-                        "troubleshooting", "system info"
-                    ),
+                    id = "about.check_updates",
+                    title = "Check for updates",
+                    subtitle = "See if a newer version of Tuned is out, and install it",
+                    keywords = listOf("update", "updates", "new version", "upgrade", "download", "install", "ota"),
                     icon = Icons.Filled.Code,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },
                     iconTint = { MaterialTheme.colorScheme.onSecondaryContainer },
@@ -1250,12 +1230,12 @@ object SettingsSearchIndex {
             )
             add(
                 SettingsEntry(
-                    id = "about.source_code",
-                    title = "Open-source licences",
-                    subtitle = "GPL-3.0",
+                    id = "about.diagnostics",
+                    title = "Export diagnostics & logs",
+                    subtitle = "Export diagnostic report, crash logs, and hardware device info",
                     keywords = listOf(
-                        "source code", "github", "open source", "repository", "gpl", "license",
-                        "licence", "credits"
+                        "diagnostics", "logs", "crash logs", "debug info", "report issue", "bug report",
+                        "troubleshooting", "system info"
                     ),
                     icon = Icons.Filled.Code,
                     iconContainer = { MaterialTheme.colorScheme.secondaryContainer },

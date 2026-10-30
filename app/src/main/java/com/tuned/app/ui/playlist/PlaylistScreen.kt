@@ -155,6 +155,34 @@ fun PlaylistScreen(
     var menuTarget by remember { mutableStateOf<Pair<Long, GeneratedTrack>?>(null) }
     var selectedPlaylists by remember { mutableStateOf(setOf<Long>()) }
     var showMultipleDeleteConfirm by remember { mutableStateOf(false) }
+    var showPlayground by remember { mutableStateOf(false) }
+
+    if (showPlayground) {
+        val playgroundSubtitle = stringResource(R.string.playground_title)
+        PlaylistPlaygroundSheet(
+            create = viewModel::createFromIdea,
+            onPlay = { tracks ->
+                showPlayground = false
+                musicPlayer.playQueue(
+                    tracks.map { track ->
+                        com.tuned.app.playback.PlayableTrack(
+                            title = track.name,
+                            artist = track.artist,
+                            album = track.album,
+                            artworkUrl = track.artworkUrl,
+                            videoId = Regex("v=([A-Za-z0-9_-]{11})").find(track.url)?.groupValues?.get(1),
+                        )
+                    },
+                    sourceLabel = playgroundSubtitle,
+                )
+            },
+            onSave = { idea, tracks ->
+                showPlayground = false
+                viewModel.savePlayground(idea, tracks, playgroundSubtitle)
+            },
+            onDismiss = { showPlayground = false },
+        )
+    }
 
     Box(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -222,6 +250,7 @@ fun PlaylistScreen(
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                 ) {
                                     LibraryCreateTile(Icons.Filled.Add, stringResource(R.string.pl_new_playlist), viewModel::openCreateDialog, Modifier.weight(1f))
+                                    LibraryCreateTile(Icons.Filled.AutoAwesome, stringResource(R.string.playground_tile), { showPlayground = true }, Modifier.weight(1f))
                                     LibraryCreateTile(Icons.AutoMirrored.Filled.PlaylistAdd, stringResource(R.string.pl_new_mix), onOpenGenerator, Modifier.weight(1f))
                                 }
                             }

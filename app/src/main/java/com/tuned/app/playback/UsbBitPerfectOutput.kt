@@ -14,7 +14,27 @@ class UsbBitPerfectOutput(private val manager: AudioManager?) {
     private var enabled = false
     private var attributes = AudioAttributes.Builder().setUsage(AudioAttributes.USAGE_MEDIA)
         .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC).build()
-    private var requestedDevice: AudioDeviceInfo? = null
+    @Volatile private var requestedDevice: AudioDeviceInfo? = null
+
+    init {
+        clearLeftovers()
+    }
+
+    /** True while Android holds a bypass for us. Cheap enough for the render thread. */
+    fun holdsBypass(): Boolean = requestedDevice != null
+
+    /**
+     * A process that died mid-playback can't clear its preference, which can leave
+     * the DAC stuck on a mode other apps can't play through. Start from a clean slate.
+     */
+    private fun clearLeftovers() {
+        if (Build.VERSION.SDK_INT < 34) return
+        runCatching {
+            manager?.getDevices(AudioManager.GET_DEVICES_OUTPUTS).orEmpty()
+                .filter { it.type == AudioDeviceInfo.TYPE_USB_DEVICE || it.type == AudioDeviceInfo.TYPE_USB_HEADSET }
+                .forEach { manager?.clearPreferredMixerAttributes(attributes, it) }
+        }
+    }
 
     @Synchronized
     fun setDevice(value: AudioDeviceInfo?) {

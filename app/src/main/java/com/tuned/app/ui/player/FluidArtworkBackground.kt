@@ -121,8 +121,11 @@ internal val FLUID_AGSL = """
         float3 prv = float3(prevArt.eval(uv * prevArtSize).rgb);
         float3 c = mix(prv, cur, fade);
 
+        // Vibrance: dull colours get lifted most and vivid ones least, so a muted cover
+        // gains colour without a bright one going neon.
         float mid = (c.r + c.g + c.b) / 3.0;
-        c = float3(mid) + (c - float3(mid)) * saturation;
+        float chroma = max(c.r, max(c.g, c.b)) - min(c.r, min(c.g, c.b));
+        c = float3(mid) + (c - float3(mid)) * mix(saturation, 1.0 + (saturation - 1.0) * 0.45, clamp(chroma, 0.0, 1.0));
         c *= brightness;
         c = c * (1.0 + contrast) - float3(0.5 * contrast);
         return half4(half3(clamp(c, 0.0, 1.0)), 1.0);
@@ -189,8 +192,9 @@ private const val MAX_BRIGHTNESS_GAIN = 2.5f
 private const val TWIST_ANGLE = 1.6f
 private const val TWIST_REACH = 1.0f
 
-private const val BLUR_FRACTION = 0.18f
-private const val BLUR_SIGMA_MIN = 80f
+// Less blur keeps the cover's colours as separate pools instead of one muddy average.
+private const val BLUR_FRACTION = 0.13f
+private const val BLUR_SIGMA_MIN = 60f
 private const val BLUR_SIGMA_MAX = 360f
 
 private const val TEXTURE_PX = 256
@@ -276,7 +280,10 @@ internal fun backdropBrightness(bitmap: Bitmap, base: Float, target: Float): Flo
                 val g = ((c shr 8) and 0xFF) / 255f
                 val b = (c and 0xFF) / 255f
                 val mid = (r + g + b) / 3f
-                fun grade(x: Float) = ((mid + (x - mid) * saturation) * factor * (1f + CONTRAST) - 0.5f * CONTRAST).coerceIn(0f, 1f)
+                val chroma = (maxOf(r, g, b) - minOf(r, g, b)).coerceIn(0f, 1f)
+                // The same vibrance as the shader.
+                val vivid = saturation + (1f + (saturation - 1f) * 0.45f - saturation) * chroma
+                fun grade(x: Float) = ((mid + (x - mid) * vivid) * factor * (1f + CONTRAST) - 0.5f * CONTRAST).coerceIn(0f, 1f)
                 total += 0.299f * grade(r) + 0.587f * grade(g) + 0.114f * grade(b)
             }
             return total / pixels.size
@@ -525,6 +532,41 @@ fun FluidArtworkBackground(
                         }
                     }
             )
+            BackdropGrain(Modifier.fillMaxSize())
         }
     }
 }
+
+private val grainTile: Bitmap by lazy {
+    val random = Random(7)
+    val pixels = IntArray(GRAIN_TILE_PX * GRAIN_TILE_PX) {
+        val shade = random.nextInt(256)
+        (0xFF shl 24) or (shade shl 16) or (shade shl 8) or shade
+    }
+    Bitmap.createBitmap(pixels, GRAIN_TILE_PX, GRAIN_TILE_PX, Bitmap.Config.ARGB_8888)
+}
+
+/**
+ * A faint fixed grain over the backdrop. Soft dark gradients band on 8-bit screens, and the
+ * grain breaks the bands up; it has to sit on top because the blur would wipe it out.
+ */
+@Composable
+private fun BackdropGrain(modifier: Modifier = Modifier) {
+    val brush = remember {
+        androidx.compose.ui.graphics.ShaderBrush(
+            androidx.compose.ui.graphics.ImageShader(
+                grainTile.asImageBitmap(),
+                androidx.compose.ui.graphics.TileMode.Repeated,
+                androidx.compose.ui.graphics.TileMode.Repeated,
+            ),
+        )
+    }
+    Box(
+        modifier.drawBehind {
+            drawRect(brush, alpha = GRAIN_STRENGTH, blendMode = androidx.compose.ui.graphics.BlendMode.Overlay)
+        },
+    )
+}
+
+private const val GRAIN_TILE_PX = 128
+private const val GRAIN_STRENGTH = 0.07f

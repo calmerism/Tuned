@@ -36,9 +36,10 @@ object TtmlParser {
             val offsetMs = readLyricOffset(document)
             val paragraphs = document.getElementsByTagName("p")
             val sung = ArrayList<LyricLine>(paragraphs.length)
+            val voices = Voices(document)
             for (i in 0 until paragraphs.length) {
                 val paragraph = paragraphs.item(i) as? Element ?: continue
-                lineFrom(paragraph)?.let { sung += it.shiftTimes(offsetMs) }
+                lineFrom(paragraph)?.let { sung += it.shiftTimes(offsetMs).copy(vocalist = voices.of(paragraph)) }
             }
             sung.sortedBy { it.timeMs }
         }.getOrDefault(emptyList())
@@ -88,6 +89,35 @@ object TtmlParser {
             }
             0L
         }.getOrDefault(0L)
+    }
+
+    /**
+     * Duet voices from `ttm:agent`: on the line or on its `div`. Person agents are
+     * numbered as they first sing, alternating 0 and 1, so the second singer's lines
+     * can sit on the other side. Group agents (a chorus) count as the lead.
+     */
+    private class Voices(document: org.w3c.dom.Document) {
+        private val groups = HashSet<String>()
+        private val order = HashMap<String, Int>()
+
+        init {
+            for (tag in listOf("ttm:agent", "agent")) {
+                val nodes = document.getElementsByTagName(tag)
+                for (i in 0 until nodes.length) {
+                    val el = nodes.item(i) as? Element ?: continue
+                    val id = el.getAttribute("xml:id").ifEmpty { el.getAttribute("id") }
+                    if (id.isNotEmpty() && el.getAttribute("type") == "group") groups += id
+                }
+            }
+        }
+
+        fun of(paragraph: Element): Int {
+            val agent = qualified(paragraph, "ttm:agent").ifEmpty {
+                (paragraph.parentNode as? Element)?.let { qualified(it, "ttm:agent") }.orEmpty()
+            }
+            if (agent.isEmpty() || agent in groups) return 0
+            return order.getOrPut(agent) { order.size } % 2
+        }
     }
 
     private fun LyricLine.shiftTimes(offsetMs: Long): LyricLine {

@@ -661,22 +661,8 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
     }
 
     override fun onTaskRemoved(rootIntent: Intent?) {
-        if (musicPlayer.state.value.isPlaying) {
-            // Something is actively playing — leave it running. The
-            // foreground notification is what keeps the service (and the
-            // process) alive; swiping the app from Recents shouldn't kill
-            // playback out from under the user.
-            super.onTaskRemoved(rootIntent)
-            return
-        }
-        // Nothing is playing when the task is removed. Stop the service to
-        // free resources, but do NOT clear the persisted session
-        // (clearSession = false): the old unconditional stopAndClear() wiped
-        // clearPersistedPlaybackSession() here too, so the paused/idle track
-        // and queue vanished and could never be restored on the next
-        // launch. Every other stopAndClear() call site (explicit stop
-        // action, notification "stop", media session onStop) is untouched
-        // and still clears the session as before.
+        // Closing the app stops the music. The queue and position stay saved
+        // (clearSession = false), so the next launch can pick up from here.
         musicPlayer.stopAndClear(clearSession = false)
         super.onTaskRemoved(rootIntent)
     }

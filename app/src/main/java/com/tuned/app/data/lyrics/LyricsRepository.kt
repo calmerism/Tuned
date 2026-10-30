@@ -54,6 +54,8 @@ data class LyricLine(
     val syllables: List<LyricSyllable> = emptyList(),
     val transliteration: String? = null,
     val transliterationSyllables: List<LyricSyllable> = emptyList(),
+    /** Who sings the line in a duet: 0 the lead, 1 the second singer (Apple TTML `ttm:agent`). */
+    val vocalist: Int = 0,
 ) {
     val hasSyllables: Boolean get() = syllables.isNotEmpty()
     val isRtl: Boolean get() = isRtlText(text) || syllables.any { isRtlText(it.text) }
@@ -1213,6 +1215,7 @@ class LyricsRepository @Inject constructor(
                 val bothWordSync = c.hasSyllables && line.hasSyllables
                 val gapCap = if (bothWordSync) CONTINUATION_GAP_WORD_MS else CONTINUATION_GAP_LINE_MS
                 val canMerge = !c.isBackgroundLine() && !line.isBackgroundLine() &&
+                    c.vocalist == line.vocalist &&
                     c.text.isNotBlank() && line.text.isNotBlank() &&
                     c.text.trim() != "♪" && line.text.trim() != "♪" &&
                     gap in 0..gapCap &&

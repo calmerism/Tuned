@@ -1940,6 +1940,26 @@ class InnerTubeMusicApi @Inject constructor(
         finalResults
     }
 
+    /** YouTube Music's Videos filter: music videos, live versions, covers and uploads the Songs filter leaves out. */
+    suspend fun searchVideos(query: String, limit: Int = 30): List<YouTubeMusicTrack> = withContext(Dispatchers.IO) {
+        if (query.isBlank()) return@withContext emptyList()
+        val config = getWebConfig()
+        val body = buildJsonObject {
+            put("context", context("WEB_REMIX", config.clientVersion, config.visitorData))
+            put("query", query.trim())
+            put("params", VIDEO_SEARCH_FILTER)
+        }
+        val root = post(
+            url = "$MUSIC_API/search?key=${config.apiKey}&prettyPrint=false",
+            body = body,
+            clientName = "WEB_REMIX",
+            clientVersion = config.clientVersion,
+            userAgent = WEB_USER_AGENT,
+            callTimeoutMs = SEARCH_REQUEST_TIMEOUT_MS,
+        )
+        parseSongRenderers(root).take(limit)
+    }
+
     suspend fun fetchPodcastHome(): List<PodcastShelf> = withContext(Dispatchers.IO) {
         val root = podcastBrowseRoot(PODCASTS_BROWSE_ID)
         PodcastParser.parseHome(root)
@@ -5004,6 +5024,7 @@ class InnerTubeMusicApi @Inject constructor(
         const val WEB_USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0"
         const val FALLBACK_WEB_KEY = "AIzaSyC9XL3ZjWddXya6X74dJoCTL-WEYFDNX30"
         const val FALLBACK_WEB_VERSION = "1.20260707.12.00"
+        const val VIDEO_SEARCH_FILTER = "EgWKAQIQAWoKEAkQBRAKEAMQBA=="
         const val ARTIST_SEARCH_FILTER = "EgWKAQIgAWoKEAkQBRAKEAMQBA=="
         const val ALBUM_SEARCH_FILTER = "EgWKAQIYAWoKEAkQBRAKEAMQBA=="
         const val PODCASTS_BROWSE_ID = "FEmusic_podcasts"

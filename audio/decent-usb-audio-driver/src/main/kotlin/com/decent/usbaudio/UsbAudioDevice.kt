@@ -275,6 +275,7 @@ class UsbAudioDevice private constructor(private val context: Context) {
         if (!claimed) {
             Log.e(TAG, "Failed to claim streaming interface — kernel driver may still be active")
             lastOpenError = "Android kept the DAC (interface ${streamingInterface.id} could not be claimed)"
+            releaseAudioInterfaces(conn, device)
             conn.close()
             return null
         }
@@ -700,6 +701,33 @@ class UsbAudioDevice private constructor(private val context: Context) {
     private fun isPlaybackId(interfaceNumber: Int): Boolean =
         playbackInterfaceId < 0 || interfaceNumber == playbackInterfaceId
 
+    /**
+     * Releases every audio interface; releasing is what re-attaches Android's USB audio
+     * driver, and closing the connection alone doesn't. Control goes last, because the
+     * driver binds from it and needs the streaming interfaces free by then. Without the
+     * control interface the DAC stays silent for every app until it is replugged.
+     */
+    private fun releaseAudioInterfaces(conn: UsbDeviceConnection, device: UsbDevice) {
+        (0 until device.interfaceCount)
+            .map { device.getInterface(it) }
+            .filter { it.interfaceClass == UsbConstants.USB_CLASS_AUDIO }
+            .distinctBy { it.id }
+            .sortedBy { it.interfaceSubclass == 1 }
+            .forEach { conn.releaseInterface(it) }
+    }
+
+    /** Gives a DAC left claimed by a dead process back to Android's driver. */
+    fun handBackToAndroid(device: UsbDevice) {
+        val conn = usbManager.openDevice(device) ?: return
+        (0 until device.interfaceCount)
+            .map { device.getInterface(it) }
+            .filter { it.interfaceClass == UsbConstants.USB_CLASS_AUDIO }
+            .distinctBy { it.id }
+            .forEach { conn.claimInterface(it, true) }
+        releaseAudioInterfaces(conn, device)
+        conn.close()
+    }
+
     fun closeDevice() {
         cachedDeviceInfo = null
         cachedSupportedRates = emptyList()
@@ -708,10 +736,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
         parsedClockSelectorId = -1
         parsedClockSelectorPins = emptyList()
         activeClockSourceId = -1
-        claimedInterface?.let { iface ->
-            connection?.releaseInterface(iface)
-            claimedInterface = null
-        }
+        claimedInterface = null
+        val conn = connection
+        val device = currentDevice
+        if (conn != null && device != null) releaseAudioInterfaces(conn, device)
         connection?.close()
         connection = null
         currentDevice = null

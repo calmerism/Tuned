@@ -105,7 +105,7 @@ class TunedApplication : Application(), ImageLoaderFactory {
             // Installed over the previous app: bring its library over, once.
             runCatching { legacyImporter.get().runOnce() }
                 .onSuccess { result ->
-                    if (result != null) withContext(Dispatchers.Main) {
+                    if (result != null && (result.liked > 0 || result.playlists > 0)) withContext(Dispatchers.Main) {
                         android.widget.Toast.makeText(
                             this@TunedApplication,
                             getString(R.string.library_import_done, result.liked, result.playlists),

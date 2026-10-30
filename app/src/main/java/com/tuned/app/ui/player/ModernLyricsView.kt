@@ -52,6 +52,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListItemInfo
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -71,6 +72,8 @@ import androidx.compose.material.icons.filled.SkipPrevious
 import androidx.compose.material.icons.filled.SyncDisabled
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.Translate
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalTextStyle
@@ -171,6 +174,12 @@ private enum class LyricsDisplayMode { Original, Romanized, Translated }
 /** White strength of every line that is not being sung (Apple's deselected white, α0.175). */
 private const val LYRIC_INACTIVE_ALPHA = 0.175f
 
+/** Apple's duet layout: each voice's lines take 85% of the width, on its own side. */
+private const val LYRIC_DUET_WIDTH = 0.85f
+
+/** How lyric text aligns in the current line: start, or end for a duet's second singer. */
+private val LocalLyricAlign = androidx.compose.runtime.staticCompositionLocalOf { TextAlign.Start }
+
 /** The unsung part of the line being sung, before the wipe reaches it (Apple: α0.35). */
 private const val LYRIC_UNSUNG_ALPHA = 0.35f
 
@@ -188,8 +197,11 @@ private const val LYRIC_BROWSE_HOLD_MS = 3000L
 /** Blur on lines that are not being sung. */
 private const val LYRIC_BLUR_DP = 4.5f
 
-/** Where the active line sits, measured from the top of the list. */
-private val LYRIC_ACTIVE_ANCHOR = 72.dp
+/** How far the list must scroll to put [item] in the middle of the screen. */
+private fun LazyListState.distanceToCentre(item: LazyListItemInfo): Float {
+    val centre = (layoutInfo.viewportStartOffset + layoutInfo.viewportEndOffset) / 2
+    return (item.offset + item.size / 2 - centre).toFloat()
+}
 
 /** Each line's own position spring and the delay between lines: Apple's
  *  lineChangeSpringTimingParameters, mass 1, stiffness 150, damping 30 (overdamped). */
@@ -305,9 +317,10 @@ fun ModernLyricsPanel(
         onControlsVisibleChange?.invoke(visible)
     }
     var fontSliderOpen by rememberSaveable { mutableStateOf(false) }
+    var singSliderOpen by rememberSaveable { mutableStateOf(false) }
     var sourceDialogOpen by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(controlsVisible, controlsAutoHideSeconds, fontSliderOpen, sourceDialogOpen, isFullscreen) {
-        if (controlsVisible && controlsAutoHideSeconds > 0 && !fontSliderOpen && !sourceDialogOpen) {
+    LaunchedEffect(controlsVisible, controlsAutoHideSeconds, fontSliderOpen, singSliderOpen, sourceDialogOpen, isFullscreen) {
+        if (controlsVisible && controlsAutoHideSeconds > 0 && !fontSliderOpen && !singSliderOpen && !sourceDialogOpen) {
             delay(controlsAutoHideSeconds * 1000L)
             setControlsVisible(false)
         }
@@ -716,6 +729,11 @@ fun ModernLyricsPanel(
             onToggleRomanization = onToggleRomanization,
             showFontSlider = fontSliderOpen,
             onShowFontSliderChange = { fontSliderOpen = it },
+            vocalsAvailable = state.vocalsAvailable,
+            vocalLevel = state.vocalLevel,
+            onVocalLevelChange = player::setVocalLevel,
+            showSingSlider = singSliderOpen,
+            onShowSingSliderChange = { singSliderOpen = it },
             onOpenLyricsSource = if (onSelectLyricsProvider != null || onTryAnotherLyricsSource != null) {
                 { sourceDialogOpen = true }
             } else null,
@@ -897,18 +915,20 @@ private fun ModernSyncedLyricsList(
     // in its draw layer, with no per-line coroutine that would start a
     // frame late.
     val density = LocalDensity.current
-    val anchorPx = with(density) { LYRIC_ACTIVE_ANCHOR.roundToPx() }
+    // The intro's interlude dots are an extra list item ahead of the first line.
+    val leadingItems = if ((lines.firstOrNull()?.timeMs ?: 0L) >= LYRIC_INTERLUDE_MIN_MS) 1 else 0
     val ripples = remember { mutableStateListOf<LyricRipple>() }
     var frameNanos by remember { mutableLongStateOf(0L) }
     LaunchedEffect(activeIndex, browsing) {
         if (browsing || activeIndex !in lines.indices) return@LaunchedEffect
         runCatching {
-            val target = listState.layoutInfo.visibleItemsInfo.find { it.index == activeIndex }
+            val activeItem = activeIndex + leadingItems
+            val target = listState.layoutInfo.visibleItemsInfo.find { it.index == activeItem }
             if (target != null) {
-                val delta = (target.offset - anchorPx).toFloat()
+                val delta = listState.distanceToCentre(target)
                 if (kotlin.math.abs(delta) >= 1f) {
                     withFrameNanos { now ->
-                        val firstIndex = listState.firstVisibleItemIndex
+                        val firstIndex = listState.firstVisibleItemIndex - leadingItems
                         listState.dispatchRawDelta(delta)
                         frameNanos = now
                         ripples.add(LyricRipple(delta, now, firstIndex))
@@ -917,7 +937,10 @@ private fun ModernSyncedLyricsList(
             } else {
                 // Far away (a seek): no ripple, just go there.
                 ripples.clear()
-                listState.scrollToItem(index = (activeIndex - 1).coerceAtLeast(0), scrollOffset = 0)
+                listState.scrollToItem(index = activeItem)
+                listState.layoutInfo.visibleItemsInfo.find { it.index == activeItem }?.let {
+                    listState.dispatchRawDelta(listState.distanceToCentre(it))
+                }
             }
         }
     }
@@ -931,10 +954,14 @@ private fun ModernSyncedLyricsList(
         }
     }
 
+    val isDuet = remember(lines) { lines.any { it.vocalist != 0 } }
+    // Room below the last lines, so they can reach the centre too.
+    val viewportHeightPx by remember { derivedStateOf { listState.layoutInfo.viewportSize.height } }
+    val bottomPadding = maxOf(130.dp, with(density) { (viewportHeightPx / 2).toDp() })
     LazyColumn(
         state = listState,
         modifier = modifier.lyricsFadingEdge(topFadeDp = 36.dp, bottomFadeDp = 110.dp),
-        contentPadding = PaddingValues(top = 40.dp, bottom = 130.dp, start = 12.dp, end = 12.dp),
+        contentPadding = PaddingValues(top = 40.dp, bottom = bottomPadding, start = 12.dp, end = 12.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         // A long intro before the first line gets Apple's interlude dots at the top.
@@ -952,6 +979,9 @@ private fun ModernSyncedLyricsList(
         }
         itemsIndexed(lines, key = { index, line -> "$index:${line.timeMs}" }) { index, line ->
             val isActive = index == activeIndex
+            // Duets: the second singer's lines sit on the right, each voice in 85% of the width.
+            val secondVoice = isDuet && line.vocalist == 1
+            val lineAlign = if (secondVoice) TextAlign.End else TextAlign.Start
             val isBgRow = line.syllables.isNotEmpty() && line.syllables.all { it.isBackground }
             val isLineRtl = remember(line, isOverallRtl) {
                 line.isRtl || (isOverallRtl && (line.text.isBlank() || line.text == "♪"))
@@ -1002,12 +1032,12 @@ private fun ModernSyncedLyricsList(
             )
 
             val lineLayoutDirection = if (isLineRtl) LayoutDirection.Rtl else LayoutDirection.Ltr
-            CompositionLocalProvider(LocalLayoutDirection provides lineLayoutDirection) {
+            CompositionLocalProvider(LocalLayoutDirection provides lineLayoutDirection, LocalLyricAlign provides lineAlign) {
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
                         .graphicsLayer {
-                            transformOrigin = TransformOrigin(if (isLineRtl) 1f else 0f, 0.5f)
+                            transformOrigin = TransformOrigin(if (isLineRtl != secondVoice) 1f else 0f, 0.5f)
                             scaleX = scale
                             scaleY = scale
                             this.translationY = rippleOffset(ripples, frameNanos, index)
@@ -1030,7 +1060,11 @@ private fun ModernSyncedLyricsList(
                     // Background vocals ride under the lead line on their own smaller line,
                     // Apple's way. Unflagged ones written as a trailing "(…)" count too.
                     val parts = remember(line) { line.withParenthesisedBackground().splitLeadAndBackground() }
-                    Column(modifier = Modifier.fillMaxWidth()) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth(if (isDuet) LYRIC_DUET_WIDTH else 1f)
+                            .align(if (secondVoice) Alignment.TopEnd else Alignment.TopStart),
+                    ) {
                         if (!isBgRow && parts != null) {
                             ModernWordByWordLine(
                                 line = parts.first,
@@ -1118,7 +1152,7 @@ private fun LyricSubLine(
             text = text,
             style = style,
             color = Color.White.copy(alpha = 0.78f),
-            textAlign = TextAlign.Start,
+            textAlign = LocalLyricAlign.current,
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 2.dp)
@@ -1159,7 +1193,7 @@ private fun ModernWordByWordLine(
                         text = line.text.ifBlank { "♪" },
                         style = fontStyle,
                         color = animatedColor,
-                        textAlign = TextAlign.Start,
+                        textAlign = LocalLyricAlign.current,
                         modifier = Modifier.fillMaxWidth(),
                     )
                 }
@@ -1173,7 +1207,7 @@ private fun ModernWordByWordLine(
                             letterSpacing = 0.2.sp,
                         ),
                         color = activeColor.copy(alpha = 0.72f),
-                        textAlign = TextAlign.Start,
+                        textAlign = LocalLyricAlign.current,
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 3.dp),
@@ -1228,7 +1262,7 @@ private fun ModernWordByWordLine(
                     text = fullText,
                     style = fontStyle,
                     color = inactiveColor,
-                    textAlign = TextAlign.Start,
+                    textAlign = LocalLyricAlign.current,
                     onTextLayout = { layout = it },
                     modifier = Modifier
                         .fillMaxWidth()
@@ -1242,7 +1276,7 @@ private fun ModernWordByWordLine(
                     text = fullText,
                     style = fontStyle,
                     color = activeColor,
-                    textAlign = TextAlign.Start,
+                    textAlign = LocalLyricAlign.current,
                     modifier = Modifier
                         .fillMaxWidth()
                         .drawWithContent {
@@ -1362,7 +1396,7 @@ private fun ModernWordByWordLine(
                         letterSpacing = 0.2.sp,
                     ),
                     color = activeColor.copy(alpha = 0.76f),
-                    textAlign = TextAlign.Start,
+                    textAlign = LocalLyricAlign.current,
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp),
@@ -1403,7 +1437,7 @@ private fun HeldWordGlow(
         text = fullText,
         style = style,
         color = Color.White,
-        textAlign = TextAlign.Start,
+        textAlign = LocalLyricAlign.current,
         modifier = Modifier
             .fillMaxWidth()
             .graphicsLayer {
@@ -1644,6 +1678,11 @@ private fun ModernLyricsControlsHost(
     onToggleRomanization: () -> Unit = {},
     showFontSlider: Boolean = false,
     onShowFontSliderChange: (Boolean) -> Unit = {},
+    vocalsAvailable: Boolean = false,
+    vocalLevel: Float = 0f,
+    onVocalLevelChange: (Float) -> Unit = {},
+    showSingSlider: Boolean = false,
+    onShowSingSliderChange: (Boolean) -> Unit = {},
     onOpenLyricsSource: (() -> Unit)? = null,
     lyricsFontScale: Float = 1f,
     onLyricsFontScaleChange: (Float) -> Unit = {},
@@ -1676,6 +1715,11 @@ private fun ModernLyricsControlsHost(
         onToggleRomanization = onToggleRomanization,
         showFontSlider = showFontSlider,
         onShowFontSliderChange = onShowFontSliderChange,
+        vocalsAvailable = vocalsAvailable,
+        vocalLevel = vocalLevel,
+        onVocalLevelChange = onVocalLevelChange,
+        showSingSlider = showSingSlider,
+        onShowSingSliderChange = onShowSingSliderChange,
         onOpenLyricsSource = onOpenLyricsSource,
         lyricsFontScale = lyricsFontScale,
         onLyricsFontScaleChange = onLyricsFontScaleChange,
@@ -1691,6 +1735,48 @@ private fun ModernLyricsControlsHost(
 }
 
 /** One tool in the lyrics tool pill: a 44dp icon, accent when on, a spinner while loading. */
+@Composable
+private fun TranslatePronounceButton(
+    displayMode: LyricsDisplayMode,
+    loading: Boolean,
+    enabled: Boolean,
+    onToggleTranslation: () -> Unit,
+    onToggleRomanization: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        LyricsToolButton(
+            icon = Icons.Filled.Translate,
+            description = stringResource(R.string.ly_translate_pronounce_cd),
+            active = displayMode != LyricsDisplayMode.Original,
+            loading = loading,
+            enabled = enabled,
+            onClick = { open = true },
+        )
+        androidx.compose.material3.DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            @Composable
+            fun option(label: Int, mode: LyricsDisplayMode, choose: () -> Unit) {
+                androidx.compose.material3.DropdownMenuItem(
+                    text = { Text(stringResource(label)) },
+                    trailingIcon = if (displayMode == mode) {
+                        { Icon(Icons.Filled.Check, contentDescription = null) }
+                    } else null,
+                    onClick = {
+                        open = false
+                        if (displayMode != mode) choose()
+                    },
+                )
+            }
+            option(R.string.ly_mode_original, LyricsDisplayMode.Original) {
+                // Turning off is the active mode's own toggle.
+                if (displayMode == LyricsDisplayMode.Translated) onToggleTranslation() else onToggleRomanization()
+            }
+            option(R.string.ly_mode_translation, LyricsDisplayMode.Translated, onToggleTranslation)
+            option(R.string.ly_mode_pronunciation, LyricsDisplayMode.Romanized, onToggleRomanization)
+        }
+    }
+}
+
 @Composable
 private fun LyricsToolButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -1758,6 +1844,11 @@ private fun ModernLyricsControls(
     onToggleRomanization: () -> Unit = {},
     showFontSlider: Boolean = false,
     onShowFontSliderChange: (Boolean) -> Unit = {},
+    vocalsAvailable: Boolean = false,
+    vocalLevel: Float = 0f,
+    onVocalLevelChange: (Float) -> Unit = {},
+    showSingSlider: Boolean = false,
+    onShowSingSliderChange: (Boolean) -> Unit = {},
     onOpenLyricsSource: (() -> Unit)? = null,
     lyricsFontScale: Float = 1f,
     onLyricsFontScaleChange: (Float) -> Unit = {},
@@ -1785,6 +1876,42 @@ private fun ModernLyricsControls(
             .padding(horizontal = 4.dp, vertical = 6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
+        // Apple's Sing: turn the vocals down with a slider.
+        AnimatedVisibility(
+            visible = showSingSlider && vocalsAvailable,
+            enter = fadeIn(tween(150)) + expandVertically(tween(200)),
+            exit = fadeOut(tween(150)) + shrinkVertically(tween(200)),
+        ) {
+            Surface(
+                shape = RoundedCornerShape(16.dp),
+                color = Color.Black.copy(alpha = 0.35f),
+                modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
+            ) {
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                ) {
+                    Text(
+                        text = stringResource(R.string.ly_vocals),
+                        style = MaterialTheme.typography.labelMedium,
+                        fontWeight = FontWeight.SemiBold,
+                        color = Color.White.copy(alpha = 0.90f),
+                    )
+                    // Right is full vocals, as on Apple's slider; left takes them out.
+                    androidx.compose.material3.Slider(
+                        value = 1f - vocalLevel,
+                        onValueChange = { onVocalLevelChange(1f - it) },
+                        colors = androidx.compose.material3.SliderDefaults.colors(
+                            thumbColor = Color.White,
+                            activeTrackColor = Color.White,
+                            inactiveTrackColor = Color.White.copy(alpha = 0.25f),
+                        ),
+                        modifier = Modifier.weight(1f),
+                    )
+                }
+            }
+        }
         AnimatedVisibility(
             visible = showFontSlider,
             enter = fadeIn(tween(150)) + expandVertically(tween(200)),
@@ -1887,24 +2014,23 @@ private fun ModernLyricsControls(
                 horizontalArrangement = Arrangement.spacedBy(4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                val translationActive = displayMode == LyricsDisplayMode.Translated
-                LyricsToolButton(
-                    icon = Icons.Filled.Translate,
-                    description = stringResource(if (translationActive) R.string.ly_show_original_cd else R.string.ly_translate_cd),
-                    active = translationActive,
-                    loading = translationLoading,
+                // Apple's Translate & Pronounce: one button, a menu of the three ways to read.
+                TranslatePronounceButton(
+                    displayMode = displayMode,
+                    loading = translationLoading || romanizationLoading,
                     enabled = controlsVisible && translationAvailable,
-                    onClick = onToggleTranslation,
+                    onToggleTranslation = onToggleTranslation,
+                    onToggleRomanization = onToggleRomanization,
                 )
-                val romanizationActive = displayMode == LyricsDisplayMode.Romanized
-                LyricsToolButton(
-                    icon = Icons.Filled.Language,
-                    description = stringResource(if (romanizationActive) R.string.ly_show_original_cd else R.string.ly_romanize_cd),
-                    active = romanizationActive,
-                    loading = romanizationLoading,
-                    enabled = controlsVisible && translationAvailable,
-                    onClick = onToggleRomanization,
-                )
+                if (vocalsAvailable) {
+                    LyricsToolButton(
+                        icon = Icons.Filled.Mic,
+                        description = stringResource(R.string.ly_sing_cd),
+                        active = showSingSlider || vocalLevel > 0f,
+                        enabled = controlsVisible,
+                        onClick = { onShowSingSliderChange(!showSingSlider) },
+                    )
+                }
                 if (canShareLyrics) {
                     LyricsToolButton(
                         icon = Icons.Filled.Share,

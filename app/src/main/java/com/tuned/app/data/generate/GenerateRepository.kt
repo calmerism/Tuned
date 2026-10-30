@@ -38,6 +38,7 @@ private const val TAG = "GenerateRepository"
 private const val GENERATE_REQUEST_TIMEOUT_MS = 20_000L
 private val YOUTUBE_VIDEO_ID_REGEX = Regex("[A-Za-z0-9_-]{11}")
 const val RECOMMENDATION_TRACK_COUNT = 35
+private const val IDEA_MAX_PER_ARTIST = 3
 
 /** Floor for regenerated "inspired" mixes — the generator relaxes artist
  *  diversity and widens its discovery net before ever returning fewer. */
@@ -269,6 +270,44 @@ class GenerateRepository @Inject constructor(
      * local Room seeds + public charts pad thin results so guest/offline
      * never returns short.
      */
+    /**
+     * A playlist from an idea in words, built from what YouTube Music finds for it:
+     * community playlists first, since people name those after moods and moments, then
+     * matching songs, then radio from the best of those if it comes up short.
+     */
+    suspend fun generateFromIdea(idea: String, count: Int = 30): List<GeneratedTrack> = kotlinx.coroutines.supervisorScope {
+        val songs = async(Dispatchers.IO) {
+            runCatching { innerTube.searchSongs(idea, limit = 20) }.getOrDefault(emptyList())
+        }
+        val fromPlaylists = async(Dispatchers.IO) {
+            val found = runCatching { innerTube.searchPlaylists(idea, limit = 3) }.getOrDefault(emptyList())
+            found.map { playlist ->
+                async {
+                    runCatching { innerTube.fetchRadioByPlaylistId(playlist.id.removePrefix("VL")).tracks }.getOrDefault(emptyList())
+                }
+            }.awaitAll()
+        }
+        val lists = fromPlaylists.await().map { list -> list.map { it.toGeneratedTrack() } } +
+            listOf(songs.await().map { it.toGeneratedTrack() })
+        // Takes in turn from each source, so one playlist can't be the whole result.
+        val mixed = buildList {
+            val longest = lists.maxOfOrNull { it.size } ?: 0
+            for (i in 0 until longest) lists.forEach { list -> list.getOrNull(i)?.let(::add) }
+        }
+        var pool = deduplicate(filterRecommendationExclusions(mixed))
+        val artistCounts = HashMap<String, Int>()
+        pool = pool.filter { track ->
+            val seen = artistCounts.getOrDefault(track.artist.lowercase(), 0)
+            artistCounts[track.artist.lowercase()] = seen + 1
+            seen < IDEA_MAX_PER_ARTIST
+        }
+        if (pool.isNotEmpty() && pool.size < count) {
+            val known = pool.mapTo(mutableSetOf()) { it.key }
+            pool = pool + generateMixFromSeeds(pool.take(5), count).filter { it.key !in known }
+        }
+        pool.take(count)
+    }
+
     suspend fun generateMixFromSeeds(
         seeds: List<GeneratedTrack>,
         count: Int,

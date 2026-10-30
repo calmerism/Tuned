@@ -325,6 +325,16 @@ class PlaylistViewModel @Inject constructor(
     fun openCreateDialog() = _uiState.update { it.copy(createDialogVisible = true) }
     fun dismissCreateDialog() = _uiState.update { it.copy(createDialogVisible = false) }
 
+    /** Playlist Playground: a list of songs from an idea in words. */
+    suspend fun createFromIdea(idea: String): List<GeneratedTrack> = generateRepository.generateFromIdea(idea)
+
+    fun savePlayground(idea: String, tracks: List<GeneratedTrack>, subtitle: String) {
+        viewModelScope.launch {
+            val saved = runCatching { playlistRepository.save(idea, subtitle, "custom", tracks) }.getOrNull()
+            load(justGeneratedId = saved?.id)
+        }
+    }
+
     fun createCustomPlaylist(title: String) {
         if (title.isBlank()) return
         viewModelScope.launch {

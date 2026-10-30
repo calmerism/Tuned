@@ -670,8 +670,8 @@ internal fun PlayerUtilityControls(
 internal fun qualityFormatLabel(state: MusicPlayerState): String {
     val codec = state.audioCodec.orEmpty()
     return when {
-        isSpatialAudioCodec(state.audioCodec) -> "Atmos"
-        state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16) -> "Hi-Res"
+        isSpatialAudioCodec(state.audioCodec) -> "Dolby Atmos"
+        state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16) -> "Hi-Res Lossless"
         state.isLossless -> "Lossless"
         codec.contains("OPUS", ignoreCase = true) -> "OPUS"
         codec.contains("AAC", ignoreCase = true) || codec.contains("mp4a", ignoreCase = true) -> "AAC"

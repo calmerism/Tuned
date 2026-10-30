@@ -23,7 +23,7 @@ import java.net.URLEncoder
 import javax.inject.Inject
 import javax.inject.Singleton
 
-enum class SearchTab { TRACKS, PODCASTS, ARTISTS, ALBUMS, PLAYLISTS, USERS }
+enum class SearchTab { TRACKS, VIDEOS, PODCASTS, ARTISTS, ALBUMS, PLAYLISTS, USERS }
 
 @Immutable
 data class SearchResultItem(
@@ -101,6 +101,15 @@ class SearchRepository @Inject constructor(
                     artist = track.artist,
                     artworkUrl = track.artworkUrl,
                     subtitle = track.album,
+                    videoId = track.videoId,
+                    entityId = track.videoId,
+                )
+            }
+            SearchTab.VIDEOS -> innerTube.searchVideos(trimmed).map { track ->
+                SearchResultItem(
+                    name = track.title,
+                    artist = track.artist,
+                    artworkUrl = track.artworkUrl,
                     videoId = track.videoId,
                     entityId = track.videoId,
                 )

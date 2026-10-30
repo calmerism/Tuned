@@ -15,6 +15,7 @@ import androidx.compose.material.icons.rounded.Delete
 import androidx.compose.material.icons.rounded.RepeatOne
 import androidx.compose.material.icons.rounded.Repeat
 import androidx.compose.material.icons.rounded.Shuffle
+import androidx.compose.material.icons.rounded.AllInclusive
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.background
@@ -206,17 +207,21 @@ internal fun QueuePanel(state: MusicPlayerState, player: MusicPlayer, modifier: 
                 .padding(bottom = Space.md),
             horizontalArrangement = Arrangement.spacedBy(Space.sm),
         ) {
-            QueueModeChip(Icons.Rounded.Shuffle, "Shuffle", on = state.shuffleEnabled, onClick = player::toggleShuffle)
+            QueueModeChip(Icons.Rounded.Shuffle, stringResource(R.string.queue_shuffle), on = state.shuffleEnabled, onClick = player::toggleShuffle)
             QueueModeChip(
                 if (state.repeatMode == androidx.media3.common.Player.REPEAT_MODE_ONE) Icons.Rounded.RepeatOne else Icons.Rounded.Repeat,
-                when (state.repeatMode) {
-                    androidx.media3.common.Player.REPEAT_MODE_ONE -> "Repeat one"
-                    androidx.media3.common.Player.REPEAT_MODE_ALL -> "Repeat all"
-                    else -> "Repeat"
-                },
+                stringResource(
+                    when (state.repeatMode) {
+                        androidx.media3.common.Player.REPEAT_MODE_ONE -> R.string.queue_repeat_one
+                        androidx.media3.common.Player.REPEAT_MODE_ALL -> R.string.queue_repeat_all
+                        else -> R.string.queue_repeat
+                    },
+                ),
                 on = state.repeatMode != androidx.media3.common.Player.REPEAT_MODE_OFF,
                 onClick = player::cycleRepeatMode,
             )
+            // Apple's AutoPlay: similar songs follow when the queue runs out.
+            QueueModeChip(Icons.Rounded.AllInclusive, stringResource(R.string.queue_autoplay), on = state.autoPlayEnabled, onClick = player::toggleAutoPlay)
         }
         if (shuffleUpcoming.isNotEmpty()) {
             Column(

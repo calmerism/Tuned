@@ -83,6 +83,7 @@ import com.tuned.app.playback.resolve.playbackIdentity
 import com.tuned.app.playback.resolve.toYouTubeAudioStream
 import com.tuned.app.playback.usb.UsbExclusivePrefs
 import com.tuned.app.widget.WidgetUpdater
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.first
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CancellationException
@@ -166,6 +167,38 @@ internal data class PersistedPlaybackSession(
     val durationMs: Long = 0L,
 )
 
+private const val BEAT_LOCK_CHECK_MS = 1_000L
+private const val BEAT_LOCK_UNTIL = 0.6f
+private const val SPEED_EASE_STEPS = 8
+private const val SPEED_EASE_STEP_MS = 1_000L
+private const val MUSIC_HAPTICS_TICK_MS = 15L
+private const val MUSIC_HAPTICS_PULSE_MS = 35L
+private const val MUSIC_HAPTICS_STALE_NS = 120_000_000L
+
+/** An AutoMix blend under way. */
+data class AutoMixTransition(
+    val progress: Float,
+    val fromArtwork: String?,
+    val toArtwork: String?,
+    /** The two songs were beat-matched, rather than plainly blended. */
+    val onTheBeat: Boolean,
+)
+
+/** What AutoMix decided for the next song, kept so it's only worked out once. */
+private class BeatMatchChoice(
+    val mediaId: String,
+    val match: com.tuned.app.playback.analysis.BeatMatch?,
+    val outgoing: com.tuned.app.playback.analysis.TempoEstimate?,
+    val incoming: com.tuned.app.playback.analysis.TempoEstimate?,
+)
+
+private class BeatLock(
+    val outgoing: com.tuned.app.playback.analysis.TempoEstimate,
+    val incoming: com.tuned.app.playback.analysis.TempoEstimate,
+    val speed: Float,
+    var nextCheckMs: Long = 0L,
+)
+
 data class MusicPlayerState(
     val connected: Boolean = true,
     val current: PlayableTrack? = null,
@@ -173,6 +206,14 @@ data class MusicPlayerState(
     val currentIndex: Int = -1,
     val sourceLabel: String = "Tuned",
     val isEndlessQueue: Boolean = false,
+    /** AutoPlay: similar songs follow when the queue runs out. */
+    val autoPlayEnabled: Boolean = true,
+    /** Music Haptics: vibrate in time with the beat. */
+    val musicHapticsEnabled: Boolean = false,
+    /** Sing: how far the vocals are turned down, 0 to 1. */
+    val vocalLevel: Float = 0f,
+    /** Sing needs the processed path; bit-perfect output must stay untouched. */
+    val vocalsAvailable: Boolean = true,
     val isPlaying: Boolean = false,
     val isBuffering: Boolean = false,
     val positionMs: Long = 0,
@@ -440,6 +481,13 @@ class MusicPlayer @Inject constructor(
     private var crossfadeEnabled = false
     @Volatile
     private var crossfadeDurationMs = 5_000L
+    private var autoMixEnabled = false
+    private var musicHapticsJob: kotlinx.coroutines.Job? = null
+    /** Sing: how much vocal to take out. Held at 0 in bit-perfect mode, which stays untouched. */
+    private val vocalControl = com.tuned.app.playback.analysis.VocalControl()
+    private var vocalLevelRequested = 0f
+    /** Each player's loudness history; weak so a released player drops out. */
+    private val loudnessByPlayer = java.util.WeakHashMap<Player, com.tuned.app.playback.analysis.LoudnessMonitor>()
     private var activePlayer: ExoPlayer? = null
     private var secondaryPlayer: ExoPlayer? = null
     private var secondaryNativeEngine: NativeAudioEngine? = null
@@ -468,6 +516,17 @@ class MusicPlayer @Inject constructor(
     private var lastCrossfadeLogKey: String? = null
     private var lastCrossfadeLogAtMs = 0L
     private val _state = MutableStateFlow(MusicPlayerState())
+    private val _autoMixTransition = MutableStateFlow<AutoMixTransition?>(null)
+    /** The AutoMix blend under way, for Now Playing to show. Null the rest of the time. */
+    val autoMixTransition: StateFlow<AutoMixTransition?> = _autoMixTransition.asStateFlow()
+    private var incomingTempoId: String? = null
+    private var incomingTempo: com.tuned.app.playback.analysis.TempoEstimate? = null
+    private var incomingTempoJob: Job? = null
+    private var pendingBeatMatch: BeatMatchChoice? = null
+    private var beatLock: BeatLock? = null
+    private var autoMixBlending = false
+    private var autoMixLayered = false
+    private var speedEaseJob: Job? = null
     val state: StateFlow<MusicPlayerState> = _state.asStateFlow()
     val chromeState: StateFlow<PlaybackChromeState> = state
         .map {
@@ -1174,6 +1233,8 @@ class MusicPlayer @Inject constructor(
         effects: AudioEffectsEngine,
         handleAudioFocus: Boolean,
     ): ExoPlayer {
+        // AutoMix reads this player's loudness from here (see loudnessByPlayer).
+        val loudness = com.tuned.app.playback.analysis.LoudnessMonitor()
         val resolving = ResolvingDataSource.Factory(cacheDataSourceFactory) { dataSpec ->
             val placeholder = dataSpec.uri.takeIf { it.scheme == com.tuned.app.data.StorageNames.PLACEHOLDER_SCHEME }
             val resolvedPlaceholder = placeholder?.let { uri ->
@@ -1327,6 +1388,8 @@ class MusicPlayer @Inject constructor(
                     exclusiveUsb = if (handleAudioFocus) exclusiveUsbOutput else null,
                     // Same rule as USB: the crossfade standby never claims the endpoint.
                     internalDirect = if (handleAudioFocus) internalDirectOutput else null,
+                    inputStage = com.tuned.app.playback.analysis.PcmInputStage(loudness, vocalControl),
+                    systemVolume = systemVolumeGain,
                 ).also { sink ->
                     sink.onConfiguredFormat = { rateHz, _, _ ->
                         // The crossfade standby arms early and configures its
@@ -1566,7 +1629,7 @@ class MusicPlayer @Inject constructor(
                         runCatching { systemEffectsBridge.onSessionChanged(audioSessionId) }
                     }
                 })
-            }
+            }.also { loudnessByPlayer[it] = loudness }
     }
 
     private fun onDecodedPcmFormatConfigured(rateHz: Int) {
@@ -1637,7 +1700,7 @@ class MusicPlayer @Inject constructor(
             // A corrupt session or OEM media-stack failure must not become a
             // permanent launch-crash loop. Discard only the resumable session.
             android.util.Log.e("MusicPlayer", "Playback restore disabled", error)
-            _state.value = MusicPlayerState()
+            _state.value = MusicPlayerState().keepingListeningChoices()
             clearPersistedPlaybackSession()
             false
         }
@@ -1887,12 +1950,34 @@ class MusicPlayer @Inject constructor(
             }
         }
 
+        // A paused app must not sit on the DAC: while it is claimed, no other
+        // app can play through it and Android routes them to the speaker.
+        applicationScope.launch(Dispatchers.Main) {
+            _state.map { it.isPlaying }.distinctUntilChanged().collectLatest { playing ->
+                if (playing) {
+                    takeDacBack()
+                } else if (exclusiveUsbOutput.isActive()) {
+                    delay(if (focusPauseAwaitingRecovery) DAC_RELEASE_AFTER_FOCUS_LOSS_MS else DAC_RELEASE_WHEN_PAUSED_MS)
+                    dacFreedWhilePaused = true
+                    applyDacRoutingFor(currentSourceRateHz())
+                }
+            }
+        }
         applicationScope.launch {
             settingsPreferences.settings.collect { settings ->
                 crossfadeEnabled = settings.crossfadeEnabled
                 crossfadeDurationMs = settings.crossfadeSeconds.coerceIn(1, 12) * 1000L
+                autoMixEnabled = settings.autoMixEnabled
+                applyMusicHaptics(settings.musicHapticsEnabled)
+                if (_state.value.autoPlayEnabled != settings.autoPlayEnabled) {
+                    _state.update { it.copy(autoPlayEnabled = settings.autoPlayEnabled) }
+                }
                 val wasBitPerfect = bitPerfectEnabled
                 bitPerfectEnabled = settings.isBitPerfectEnabled
+                applyVocalLevel()
+                if (_state.value.vocalsAvailable == settings.isBitPerfectEnabled) {
+                    _state.update { it.copy(vocalsAvailable = !settings.isBitPerfectEnabled) }
+                }
                 systemEffectsModePref = settings.systemEffectsMode
                 updateBitPerfectState()
                 recomputeUsbExclusivePref()
@@ -1927,8 +2012,8 @@ class MusicPlayer @Inject constructor(
                             // Bulletproofing: tempo stretch resamples and any
                             // leftover fade gain scales samples — both defeat
                             // bit-perfect, so engaging the mode resets them.
-                            if (runCatching { player.playbackParameters.speed }.getOrDefault(1f) != 1f) {
-                                runCatching { player.setPlaybackSpeed(1f) }
+                            if (runCatching { player.playbackParameters }.getOrDefault(PlaybackParameters.DEFAULT) != PlaybackParameters.DEFAULT) {
+                                runCatching { player.playbackParameters = PlaybackParameters.DEFAULT }
                             }
                             if (runCatching { player.volume }.getOrDefault(1f) != 1f) {
                                 runCatching { player.volume = 1f }
@@ -2192,7 +2277,7 @@ class MusicPlayer @Inject constructor(
                 durationMs = selectedTrack.durationMs ?: findKnownDuration(selectedTrack) ?: 0L,
                 shuffleEnabled = if (playerDelegate.isInitialized()) player.shuffleModeEnabled else startShuffled,
                 repeatMode = _state.value.repeatMode,
-            )
+            ).keepingListeningChoices()
             durationOwnerMediaId = selectedTrack.mediaIdKey()
             persistPlaybackSession()
         }
@@ -2490,6 +2575,7 @@ class MusicPlayer @Inject constructor(
         // An explicit resume replaces any focus-induced pause we owed.
         focusPauseAwaitingRecovery = false
         exclusiveUsbOutput.setPaused(false)
+        takeDacBack()
         if (isCasting) {
             castPlayback?.play()
             return@onMain
@@ -2898,8 +2984,35 @@ class MusicPlayer @Inject constructor(
         )
     }
 
+    /** Trims the incoming song's speed while the two are playing together, closing any drift. */
+    private fun holdBeatLock(outgoing: Player, incomingPositionMs: Long, progress: Float) {
+        val lock = beatLock ?: return
+        val now = SystemClock.elapsedRealtime()
+        if (now < lock.nextCheckMs) return
+        lock.nextCheckMs = now + BEAT_LOCK_CHECK_MS
+        val drift = com.tuned.app.playback.analysis.beatDriftMs(
+            outgoing.currentPosition.coerceAtLeast(0L), incomingPositionMs, lock.outgoing, lock.incoming, lock.speed,
+        )
+        // Past the middle the outgoing song is fading; it's no longer worth bending for.
+        val speed = if (progress < BEAT_LOCK_UNTIL) {
+            com.tuned.app.playback.analysis.beatLockSpeed(lock.speed, drift)
+        } else {
+            lock.speed
+        }
+        player.playbackParameters = PlaybackParameters(speed, 1f)
+        android.util.Log.i("MusicPlayer", "AutoMix: beat drift ${drift.toInt()}ms, speed $speed")
+    }
+
     @MainThread
     private fun cancelCrossfade() {
+        val wasBeatLocked = beatLock != null
+        beatLock = null
+        autoMixBlending = false
+        autoMixLayered = false
+        pendingBeatMatch = null
+        _autoMixTransition.value = null
+        loudnessByPlayer.values.forEach { it.bassCut = 0f }
+        if (wasBeatLocked) easeToNormalSpeed()
         crossfadeStandbyArmed = false
         crossfadeStandbyPreparing = false
         lastCrossfadeLogKey = null
@@ -2946,6 +3059,8 @@ class MusicPlayer @Inject constructor(
     @MainThread
     private fun armCrossfadeStandby(nextIndex: Int, nextItem: MediaItem) {
         val standby = standbyOrCreate()
+        standby.playbackParameters = player.playbackParameters
+        pendingBeatMatch = null
         standbyQueue = (0 until player.mediaItemCount).map(player::getMediaItemAt)
         standbyIndex = nextIndex
         standby.volume = 0f
@@ -2977,6 +3092,76 @@ class MusicPlayer @Inject constructor(
     }
 
     @MainThread
+    /**
+     * The next song is the album's next track: same album, not a single, and not shuffled.
+     * AutoMix plays those straight on so albums stay gapless.
+     */
+    /** Reads the beat of the song coming up, once per song, in time for the blend. */
+    private fun requestIncomingTempo(next: MediaItem) {
+        val id = next.mediaId
+        if (incomingTempoId == id) return
+        val uri = next.localConfiguration?.uri ?: return
+        incomingTempoId = id
+        incomingTempo = null
+        val cacheKey = next.localConfiguration?.customCacheKey
+        incomingTempoJob?.cancel()
+        incomingTempoJob = applicationScope.launch(Dispatchers.IO) {
+            val found = runCatching {
+                com.tuned.app.playback.analysis.analyzeSongStart(cacheDataSourceFactory.createDataSource(), uri, cacheKey)
+            }.onFailure { android.util.Log.w("MusicPlayer", "AutoMix: couldn't read the next song's beat", it) }.getOrNull()
+            withContext(Dispatchers.Main) { if (incomingTempoId == id) incomingTempo = found }
+        }
+    }
+
+    /**
+     * How this song should come in over the current one, worked out once when the
+     * window opens. Null means a plain blend: the beat is unclear, the tempos are too
+     * far apart, or the listener has set their own speed.
+     */
+    private fun beatMatchFor(standby: ExoPlayer, next: MediaItem, positionMs: Long, overlapMs: Long, durationMs: Long): BeatMatchChoice {
+        pendingBeatMatch?.takeIf { it.mediaId == next.mediaId }?.let { return it }
+        val outgoing = loudnessByPlayer[player]?.tempo()
+        val incoming = incomingTempo.takeIf { incomingTempoId == next.mediaId }
+        val atNormalSpeed = player.playbackParameters == PlaybackParameters.DEFAULT
+        val match = if (atNormalSpeed) {
+            com.tuned.app.playback.analysis.planBeatMatch(outgoing, incoming, positionMs, overlapMs)
+                ?.takeIf { it.startAtMs + AUTOMIX_MIN_FADE_MS <= durationMs }
+        } else {
+            null
+        }
+        android.util.Log.i(
+            "MusicPlayer",
+            "AutoMix: song=${durationMs / 1000}s planned=${overlapMs}ms outgoing=${outgoing?.bpm}bpm(${outgoing?.confidence}) incoming=${incoming?.bpm}bpm(${incoming?.confidence}) " +
+                "speed=${match?.speed} startIn=${match?.let { it.startAtMs - positionMs }}ms overlap=${match?.overlapMs}ms " +
+                "layered=${match == null && com.tuned.app.playback.analysis.canLayerWithoutMatching(outgoing, incoming)}",
+        )
+        // Set ahead of the start, so the route change happens before anyone can hear it.
+        match?.let { standby.playbackParameters = PlaybackParameters(it.speed, 1f) }
+        return BeatMatchChoice(next.mediaId, match, outgoing, incoming).also { pendingBeatMatch = it }
+    }
+
+    /** Eases a song back to normal speed after a blend, too slowly to hear. */
+    private fun easeToNormalSpeed() {
+        val from = runCatching { player.playbackParameters.speed }.getOrDefault(1f)
+        speedEaseJob?.cancel()
+        if (from == 1f) return
+        speedEaseJob = applicationScope.launch(Dispatchers.Main) {
+            for (step in 1..SPEED_EASE_STEPS) {
+                delay(SPEED_EASE_STEP_MS)
+                val speed = if (step == SPEED_EASE_STEPS) 1f else from + (1f - from) * step / SPEED_EASE_STEPS
+                player.playbackParameters = PlaybackParameters(speed, 1f)
+            }
+        }
+    }
+
+    private fun continuesAlbum(current: MediaItem?, next: MediaItem?): Boolean {
+        if (player.shuffleModeEnabled) return false
+        val album = current?.mediaMetadata?.albumTitle?.toString()?.trim().orEmpty()
+        if (album.isEmpty()) return false
+        if (album.equals(current?.mediaMetadata?.title?.toString()?.trim(), ignoreCase = true)) return false
+        return album.equals(next?.mediaMetadata?.albumTitle?.toString()?.trim(), ignoreCase = true)
+    }
+
     private fun updateCrossfade(positionMs: Long): Boolean {
         if (!crossfadeEnabled || bitPerfectEnabled) return false
         // Podcast episodes are long-form speech: a crossfade would cut the
@@ -2993,11 +3178,20 @@ class MusicPlayer @Inject constructor(
                 // Perceptual fade: outgoing ramps down, incoming ramps up.
                 // Equal-power sin/cos kept both near full level for most of
                 // the window, which sounded like two songs mixed together.
-                val outGain = (1f - progress) * (1f - progress)
-                val inGain = progress * progress
+                val (outGain, inGain) = if (beatLock != null || autoMixLayered) {
+                    com.tuned.app.playback.analysis.beatMatchedGains(progress)
+                } else {
+                    (1f - progress) * (1f - progress) to progress * progress
+                }
                 player.volume = inGain
                 outgoing.volume = outGain
                 outgoing.playWhenReady = player.isPlaying
+                if (autoMixBlending) {
+                    loudnessByPlayer[player]?.bassCut = com.tuned.app.playback.analysis.blendBassCut(progress, incoming = true)
+                    loudnessByPlayer[outgoing]?.bassCut = com.tuned.app.playback.analysis.blendBassCut(progress, incoming = false)
+                    _autoMixTransition.update { it?.copy(progress = progress) }
+                    holdBeatLock(outgoing, incomingPos, progress)
+                }
             }
             return false
         }
@@ -3040,7 +3234,20 @@ class MusicPlayer @Inject constructor(
                 repeatOne = player.repeatMode == Player.REPEAT_MODE_ONE || _state.value.repeatMode == Player.REPEAT_MODE_ONE,
                 durationMs = timingDurationMs,
                 positionMs = livePosMs,
-                crossfadeMs = crossfadeDurationMs,
+                crossfadeMs = if (autoMixEnabled) {
+                    val loudness = loudnessByPlayer[player]
+                    autoMixFadeMs(
+                        AutoMixInput(
+                            durationMs = timingDurationMs,
+                            positionMs = livePosMs,
+                            recentDb = loudness?.recentDb(),
+                            typicalDb = loudness?.typicalDb(),
+                            nextContinuesAlbum = continuesAlbum(player.currentMediaItem, nextItem),
+                        ),
+                    )
+                } else {
+                    crossfadeDurationMs
+                },
                 playbackSpeed = player.playbackParameters.speed,
                 hasNextItem = hasNext,
                 nextItemResolved = if (isNextLocal) {
@@ -3061,6 +3268,8 @@ class MusicPlayer @Inject constructor(
                 refreshLeadMs = CROSSFADE_PREP_REFRESH_LEAD_MS,
             ),
         )
+
+        if (autoMixEnabled && armedForNext && nextItem != null) requestIncomingTempo(nextItem)
 
         when (plan) {
             // Idle carries the blocking gate (disabled/bit-perfect/paused/no-next/
@@ -3127,7 +3336,14 @@ class MusicPlayer @Inject constructor(
                     cancelCrossfade()
                     return false
                 }
-                handOffCrossfade(standby, plan.overlapMs)
+                val choice = if (autoMixEnabled) {
+                    beatMatchFor(standby, nextItem, livePosMs, plan.overlapMs, timingDurationMs)
+                } else {
+                    null
+                }
+                // Wait for the beat; it's never more than one away.
+                if (choice?.match != null && livePosMs < choice.match.startAtMs) return false
+                handOffCrossfade(standby, choice?.match?.overlapMs ?: plan.overlapMs, choice)
                 return true
             }
         }
@@ -3135,8 +3351,10 @@ class MusicPlayer @Inject constructor(
 
     /** Swaps the standby in as the active player and starts the blend. */
     @MainThread
-    private fun handOffCrossfade(standby: ExoPlayer, overlapMs: Long) {
+    private fun handOffCrossfade(standby: ExoPlayer, overlapMs: Long, choice: BeatMatchChoice? = null) {
         val outgoing = player
+        speedEaseJob?.cancel()
+        val outgoingArtwork = _state.value.current?.artworkUrl
         val shuffleOrder = mutableListOf<Int>()
         val timeline = outgoing.currentTimeline
         var index = timeline.getFirstWindowIndex(outgoing.shuffleModeEnabled)
@@ -3147,8 +3365,26 @@ class MusicPlayer @Inject constructor(
         standby.setShuffleOrder(DefaultShuffleOrder(shuffleOrder.toIntArray(), Random.nextLong()))
         standby.shuffleModeEnabled = outgoing.shuffleModeEnabled
         standby.repeatMode = outgoing.repeatMode
-        standby.playbackParameters = outgoing.playbackParameters
+        val match = choice?.match
+        standby.playbackParameters = match?.let { PlaybackParameters(it.speed, 1f) } ?: outgoing.playbackParameters
         overlapDurationMs = overlapMs
+        autoMixBlending = choice != null
+        autoMixLayered = choice != null && match == null &&
+            com.tuned.app.playback.analysis.canLayerWithoutMatching(choice.outgoing, choice.incoming)
+        if (autoMixBlending) {
+            loudnessByPlayer[standby]?.bassCut = 1f
+            _autoMixTransition.value = AutoMixTransition(
+                progress = 0f,
+                fromArtwork = outgoingArtwork,
+                toArtwork = standby.currentMediaItem?.mediaMetadata?.artworkUri?.toString(),
+                onTheBeat = match != null,
+            )
+        }
+        beatLock = if (match != null && choice.outgoing != null && choice.incoming != null) {
+            BeatLock(choice.outgoing, choice.incoming, match.speed)
+        } else {
+            null
+        }
         outgoing.volume = 1f
         standby.volume = 0f
         outgoing.removeListener(listener)
@@ -3303,8 +3539,21 @@ class MusicPlayer @Inject constructor(
         else resolved.samplingRateKHz?.times(1000.0)?.toInt()?.takeIf { it > 0 }
             ?: currentSourceRateHz()
 
+    private val systemVolumeGain by lazy { SystemVolumeGain(appContext) }
+
+    /** Set while a long pause has handed the DAC back to Android; playing again ends it. */
+    private var dacFreedWhilePaused = false
+
+    private fun takeDacBack() {
+        if (!dacFreedWhilePaused) return
+        dacFreedWhilePaused = false
+        applyDacRoutingFor(currentSourceRateHz())
+        // Audio queued for the DAC went with it, so restart from what was last heard.
+        if (playerDelegate.isInitialized()) player.seekTo(player.currentPosition)
+    }
+
     private fun exclusiveUsbWanted(): Boolean {
-        if (isCasting) return false
+        if (isCasting || dacFreedWhilePaused) return false
         if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.Q) return false
         if (!bitPerfectEnabled || !usbExclusivePrefEnabled) return false
         // E-AC-3 JOC / 360 RA is multichannel. Exclusive USB is stereo PCM
@@ -4330,6 +4579,100 @@ class MusicPlayer @Inject constructor(
 
     fun toggleShuffle() = setShuffleEnabled(!state.value.shuffleEnabled)
 
+    /** Sing: 0 keeps the vocals, 1 takes out as much as centre cancelling can. */
+    /**
+     * The state is rebuilt from the player on routine updates, and these aren't the
+     * player's to know: without this they fall back to their defaults.
+     */
+    private fun MusicPlayerState.keepingListeningChoices(): MusicPlayerState {
+        val previous = _state.value
+        return copy(
+            autoPlayEnabled = previous.autoPlayEnabled,
+            musicHapticsEnabled = previous.musicHapticsEnabled,
+            vocalLevel = previous.vocalLevel,
+            vocalsAvailable = previous.vocalsAvailable,
+        )
+    }
+
+    fun setVocalLevel(level: Float) {
+        vocalLevelRequested = level.coerceIn(0f, 1f)
+        applyVocalLevel()
+        _state.update { it.copy(vocalLevel = vocalLevelRequested) }
+    }
+
+    private fun applyVocalLevel() {
+        vocalControl.level = if (bitPerfectEnabled) 0f else vocalLevelRequested
+    }
+
+    fun toggleMusicHaptics() {
+        val enabled = !state.value.musicHapticsEnabled
+        applyMusicHaptics(enabled)
+        applicationScope.launch { runCatching { settingsPreferences.setMusicHapticsEnabled(enabled) } }
+    }
+
+    /** False on phones with no vibrator, where the toggle is hidden. */
+    val canVibrate: Boolean by lazy { musicVibrator()?.hasVibrator() == true }
+
+    private fun musicVibrator(): android.os.Vibrator? = runCatching {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+            appContext.getSystemService(android.os.VibratorManager::class.java)?.defaultVibrator
+        } else {
+            @Suppress("DEPRECATION")
+            appContext.getSystemService(android.os.Vibrator::class.java)
+        }
+    }.getOrNull()
+
+    private fun applyMusicHaptics(enabled: Boolean) {
+        vocalControl.beatsEnabled = enabled
+        if (_state.value.musicHapticsEnabled != enabled) {
+            _state.update { it.copy(musicHapticsEnabled = enabled) }
+        }
+        if (!enabled) {
+            musicHapticsJob?.cancel()
+            musicHapticsJob = null
+            return
+        }
+        if (musicHapticsJob?.isActive == true) return
+        val vibrator = musicVibrator() ?: return
+        val beat = android.os.VibrationEffect.createOneShot(
+            MUSIC_HAPTICS_PULSE_MS,
+            if (vibrator.hasAmplitudeControl()) 255 else android.os.VibrationEffect.DEFAULT_AMPLITUDE,
+        )
+        // Marked as media: a phone on silent drops vibrations with no stated use.
+        val attributes = android.media.AudioAttributes.Builder()
+            .setUsage(android.media.AudioAttributes.USAGE_MEDIA)
+            .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
+            .build()
+        musicHapticsJob = applicationScope.launch(Dispatchers.Main) {
+            while (true) {
+                delay(MUSIC_HAPTICS_TICK_MS)
+                if (!playerDelegate.isInitialized()) continue
+                val beats = loudnessByPlayer[player]?.beats ?: continue
+                // Paused audio isn't being felt; what was queued would land after it resumes.
+                if (!player.isPlaying) {
+                    beats.clear()
+                    continue
+                }
+                val now = System.nanoTime()
+                var due = false
+                while (true) {
+                    val at = beats.peek() ?: break
+                    if (at > now) break
+                    beats.poll()
+                    // Only recent ones: after a stall, a backlog of beats must not all fire.
+                    if (now - at < MUSIC_HAPTICS_STALE_NS) due = true
+                }
+                if (due) runCatching { vibrator.vibrate(beat, attributes) }
+            }
+        }
+    }
+
+    fun toggleAutoPlay() {
+        val enabled = !state.value.autoPlayEnabled
+        _state.update { it.copy(autoPlayEnabled = enabled) }
+        applicationScope.launch { runCatching { settingsPreferences.setAutoPlayEnabled(enabled) } }
+    }
+
     fun setShuffleEnabled(enabled: Boolean) = onMain {
         if (isCasting) {
             _state.update { it.copy(shuffleEnabled = enabled) }
@@ -4401,6 +4744,9 @@ class MusicPlayer @Inject constructor(
     }
 
     fun setPlaybackParameters(speed: Float, pitch: Float) = onMain {
+        speedEaseJob?.cancel()
+        // Both change the samples, so they stay at normal while Bit-Perfect is on.
+        if (bitPerfectEnabled && (speed != 1f || pitch != 1f)) return@onMain
         val clampedSpeed = speed.coerceIn(0.25f, 3.0f)
         val clampedPitch = pitch.coerceIn(0.25f, 3.0f)
         if (isCasting) {
@@ -4410,6 +4756,7 @@ class MusicPlayer @Inject constructor(
             return@onMain
         }
         cancelCrossfade()
+        speedEaseJob?.cancel()
         player.playbackParameters = PlaybackParameters(clampedSpeed, clampedPitch)
         _state.update { it.copy(speed = clampedSpeed, pitch = clampedPitch) }
         persistPlaybackSession()
@@ -4469,6 +4816,7 @@ class MusicPlayer @Inject constructor(
     fun stopAndClear(clearSession: Boolean = true) = onMain {
         if (isCasting) castPlayback?.disconnect()
         cancelCrossfade()
+        speedEaseJob?.cancel()
         resolutionRequests.values.forEach { it.second.cancel() }
         resolutionRequests.clear()
         cancelPendingPlaybackResolution()
@@ -4480,6 +4828,7 @@ class MusicPlayer @Inject constructor(
         sleepTimerStep = 0
         // Save the podcast resume position before the queue is torn down.
         checkpointPodcastProgress()
+        if (!clearSession) persistPlaybackSession()
         player.stop()
         player.clearMediaItems()
         // Shuffle is engine state that survives stop()/clearMediaItems(): without
@@ -4487,8 +4836,11 @@ class MusicPlayer @Inject constructor(
         // fresh state says off — until the first refresh() flips it back on.
         player.shuffleModeEnabled = false
         preparedStreams.clear()
+        // Nothing is playing, so give the DAC back to Android now.
+        exclusiveUsbOutput.setWanted(false)
+        audioSinks.forEach { it.syncExclusiveUsb(false) }
         if (clearSession) {
-            _state.value = MusicPlayerState()
+            _state.value = MusicPlayerState().keepingListeningChoices()
             clearPersistedPlaybackSession()
             applicationScope.launch(Dispatchers.IO) { WidgetUpdater.clear(appContext) }
         } else {
@@ -5378,7 +5730,7 @@ class MusicPlayer @Inject constructor(
                 }
             } else {
                 val currentTrack = player.currentMediaItem?.toPlayableTrack()
-                if (currentTrack != null && !isRepeatOne && currentTrack.mediaType == MediaType.SONG) {
+                if (_state.value.autoPlayEnabled && currentTrack != null && !isRepeatOne && currentTrack.mediaType == MediaType.SONG) {
                     radioQueueActive = true
                     _state.update { it.copy(isEndlessQueue = true) }
                     startRadioQueue(currentTrack, resumePlaybackImmediately = true)
@@ -7892,7 +8244,7 @@ class MusicPlayer @Inject constructor(
             repeatMode = session.repeatMode,
             speed = session.speed,
             pitch = session.pitch,
-        )
+        ).keepingListeningChoices()
         durationOwnerMediaId = restoredQueue[restoredIndex].mediaIdKey()
         pendingRestoredSession = session.copy(
             queue = restoredQueue,
@@ -8070,12 +8422,14 @@ class MusicPlayer @Inject constructor(
             samplingRateKHz = previous.samplingRateKHz.takeIf { hasExplicitPrevious } ?: streamForCurrent?.samplingRateKHz,
             sleepTimerRemainingMs = sleepTimerDeadlineMs?.minus(SystemClock.elapsedRealtime())?.coerceAtLeast(0),
             error = if (isPlayingState) null else previous.error,
-        )
+        ).keepingListeningChoices()
         persistPlaybackSession()
         updateSignalPath()
     }
 
     companion object {
+        private const val DAC_RELEASE_WHEN_PAUSED_MS = 30_000L
+        private const val DAC_RELEASE_AFTER_FOCUS_LOSS_MS = 5_000L
         private const val EXCLUSIVE_DRIFT_ABORT_PPM = 20_000.0
         private const val EXCLUSIVE_DRIFT_ABORT_TICKS = 2
         /**

@@ -54,25 +54,6 @@ graph TD
 * **Storage**: Room for playlists, play counts, downloads and caches; DataStore for settings. Names of saved data live in `data/StorageNames.kt` and stay fixed so updates never orphan what is on the phone.
 * **Dependency injection**: Hilt.
 
-### Updating from the previous app
-
-Tuned keeps the app ID, a higher version code and the signing key of the app it replaces, so Android installs it as an update and leaves that app's files in place. On first launch `data/migration/LegacyImporter` reads them once:
-
-```mermaid
-sequenceDiagram
-    participant Android
-    participant App as Tuned (first launch)
-    participant Old as Previous app's files
-    participant Tuned as Tuned's stores
-
-    Android->>App: Install as an update, data kept
-    App->>Old: Read settings (YouTube Music cookie)
-    App->>Tuned: Sign in, or switch to guest
-    App->>Old: Read song.db (likes, playlists, plays, searches)
-    App->>Tuned: Write liked songs, playlists, play counts, history
-    Note over App: Each stage is marked done, so a cut-short import resumes without doubling anything
-```
-
 
 ## Getting Started
 
@@ -138,7 +119,5 @@ Android 10 or newer. A Last.fm account and a YouTube Music sign-in are both opti
 ## License
 
 GPL-3.0. See [LICENSE](LICENSE).
-
-Lossless, USB and bit-perfect playback come from LastWave by Duxtami and Ajisth, also GPL-3.0. Lyrics are set in Inter, under the SIL Open Font License 1.1.
 
 Tuned is not affiliated with Google, YouTube, Last.fm, Spotify or Apple. It does not host or distribute media.

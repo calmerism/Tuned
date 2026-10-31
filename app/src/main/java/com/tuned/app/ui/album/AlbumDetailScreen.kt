@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.rounded.Add
 import androidx.compose.material.icons.rounded.Check
 import androidx.compose.material.icons.rounded.Person
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
@@ -97,6 +98,8 @@ import com.tuned.app.data.canvas.CanvasArtwork
 import com.tuned.app.data.model.AlbumPageData
 import com.tuned.app.playback.PlayableTrack
 import com.tuned.app.ui.common.ArtworkImage
+import com.tuned.app.ui.common.ExplicitTag
+import com.tuned.app.ui.theme.ExplicitMark
 import com.tuned.app.ui.common.TrackContextMenuSheet
 import com.tuned.app.ui.common.TrackMenuCapabilities
 import com.tuned.app.ui.common.TrackMenuTarget
@@ -195,6 +198,10 @@ fun AlbumDetailScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val undo = LocalUndoController.current
+    val versionMissing = stringResource(R.string.alb_version_missing)
+    val pinnedMessage = stringResource(R.string.pin_added)
+    val unpinnedMessage = stringResource(R.string.pin_removed)
+    val pinsViewModel: com.tuned.app.ui.common.PinsViewModel = hiltViewModel()
     val screenWidth = LocalConfiguration.current.screenWidthDp.dp
     val density = LocalDensity.current
 
@@ -265,7 +272,7 @@ fun AlbumDetailScreen(
             // canvas album has its clip there instead.
             if (canvas == null) DetailAccentWash(listState)
             when (val state = uiState) {
-                is AlbumUiState.Loading -> AlbumLoading(title = albumTitle, artist = artistName, screenWidth = screenWidth)
+                is AlbumUiState.Loading -> AlbumLoading(title = albumTitle.takeUnless { browseId != null && it == "Album" }.orEmpty(), artist = artistName, screenWidth = screenWidth)
                 is AlbumUiState.Error -> {
                     Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally, modifier = Modifier.padding(Space.xl)) {
@@ -354,7 +361,9 @@ fun AlbumDetailScreen(
                         val appleShelves = apple?.shelves.orEmpty()
                         val tileWidth = (screenWidth * RELEASE_TILE_SHARE).coerceAtMost(Sizes.tileTallWidth)
                         val kinds = AppleShelf.Kind.entries.filter { kind ->
-                            appleShelves.any { it.kind == kind } || (kind == AppleShelf.Kind.MoreByArtist && album.otherAlbums.isNotEmpty())
+                            appleShelves.any { it.kind == kind } ||
+                                (kind == AppleShelf.Kind.MoreByArtist && album.otherAlbums.isNotEmpty()) ||
+                                (kind == AppleShelf.Kind.OtherVersions && album.otherVersions.isNotEmpty())
                         }
                         kinds.forEach { kind ->
                             val shelf = appleShelves.firstOrNull { it.kind == kind }
@@ -370,6 +379,24 @@ fun AlbumDetailScreen(
                                     itemsIndexed(releases, key = { i, it -> "more_${i}_${it.browseId.ifBlank { it.title }}" }) { _, item ->
                                         ReleaseTile(
                                             item = item,
+                                            artist = album.artist,
+                                            width = tileWidth,
+                                            onClick = { onOpenAlbum(item.title, album.artist, item.browseId) },
+                                        )
+                                    }
+                                }
+                                // YouTube's list links straight to each edition, and search often can't find them.
+                                kind == AppleShelf.Kind.OtherVersions && album.otherVersions.isNotEmpty() -> detailShelf(
+                                    key = "other_versions",
+                                    title = { stringResource(R.string.alb_other_versions) },
+                                    onSeeAll = null,
+                                ) {
+                                    itemsIndexed(album.otherVersions, key = { i, it -> "version_${i}_${it.browseId}" }) { _, item ->
+                                        ReleaseTile(
+                                            // YouTube leaves the year off these entries; Apple usually has it.
+                                            item = item.copy(
+                                                year = item.year ?: shelf?.items?.firstOrNull { it.title.equals(item.title, ignoreCase = true) }?.year,
+                                            ),
                                             artist = album.artist,
                                             width = tileWidth,
                                             onClick = { onOpenAlbum(item.title, album.artist, item.browseId) },
@@ -408,7 +435,18 @@ fun AlbumDetailScreen(
                                                 subtitle = if (kind == AppleShelf.Kind.YouMightAlsoLike) item.artist else item.year ?: item.artist,
                                                 artworkUrl = item.artworkUrl(),
                                                 width = tileWidth,
-                                                onClick = { onOpenAlbum(item.title, itemArtist, null) },
+                                                onClick = {
+                                                    if (kind == AppleShelf.Kind.OtherVersions) {
+                                                        viewModel.openOtherVersion(
+                                                            title = item.title,
+                                                            artist = itemArtist,
+                                                            onFound = { id -> onOpenAlbum(item.title, itemArtist, id) },
+                                                            onMissing = { undo?.show(versionMissing) },
+                                                        )
+                                                    } else {
+                                                        onOpenAlbum(item.title, itemArtist, null)
+                                                    }
+                                                },
                                             )
                                         }
                                     }
@@ -428,6 +466,18 @@ fun AlbumDetailScreen(
                 onShare = shareAlbum,
                 shareLabel = stringResource(R.string.alb_share),
                 menu = { dismiss ->
+                    val albumPin = com.tuned.app.data.library.PinnedItem(
+                        kind = com.tuned.app.data.library.PinKind.ALBUM,
+                        title = title,
+                        artist = artist,
+                        artworkUrl = data?.artworkUrl,
+                        browseId = data?.browseId?.takeIf(String::isNotBlank) ?: browseId,
+                    )
+                    DetailMenuItem(Icons.Rounded.PushPin, stringResource(if (pinsViewModel.isPinned(albumPin)) R.string.pin_remove else R.string.pin_add)) {
+                        dismiss()
+                        val now = pinsViewModel.toggle(albumPin)
+                        undo?.show(if (now) pinnedMessage else unpinnedMessage)
+                    }
                     DetailMenuItem(Icons.Rounded.Shuffle, stringResource(R.string.alb_shuffle_cd)) { dismiss(); viewModel.playShuffle() }
                     if (artist.isNotBlank()) {
                         DetailMenuItem(Icons.Rounded.Person, stringResource(R.string.alb_go_to_artist)) { dismiss(); openArtist() }
@@ -473,7 +523,7 @@ fun AlbumDetailScreen(
  * artist, about 20 to the controls.
  */
 @Composable
-private fun AlbumHeader(
+internal fun AlbumHeader(
     album: AlbumPageData,
     apple: AppleAlbumInfo?,
     notes: AnnotatedString?,
@@ -530,17 +580,27 @@ private fun AlbumHeader(
                 }
                 Spacer(Modifier.height(Space.xl))
             }
-            Text(
-                text = album.title,
-                style = AppType.titleL,
-                color = colors.text1,
-                textAlign = TextAlign.Center,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis,
+            // As in Apple Music, the explicit mark follows the album title.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .padding(horizontal = Keyline.detail + Space.xs)
                     .onGloballyPositioned { onTitleBottom((contentTop + it.positionInParent().y + it.size.height).toInt()) },
-            )
+            ) {
+                Text(
+                    text = album.title,
+                    style = AppType.titleL,
+                    color = colors.text1,
+                    textAlign = TextAlign.Center,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (album.explicit) {
+                    Spacer(Modifier.width(Space.sm))
+                    ExplicitTag(color = colors.text1.copy(alpha = 0.65f), fontSize = ExplicitMark.textLarge)
+                }
+            }
             if (album.artist.isNotBlank()) {
                 Spacer(Modifier.height(Space.xxs))
                 Text(
@@ -769,8 +829,18 @@ private fun AlbumNotesDialog(title: String, artist: String, notes: AnnotatedStri
  * the artist only when it differs from the album's, and ⋯. 56dp tall, no cover, no separators.
  */
 @OptIn(ExperimentalFoundationApi::class)
+/**
+ * The artist line under an album track, only when it adds someone. An album credited to
+ * "Kanye West & Ye" with tracks by "Kanye West" says nothing new on every row.
+ */
+internal fun trackArtistLine(trackArtist: String, albumArtist: String): String? {
+    if (trackArtist.isBlank() || ArtistHelper.isPlayCountOrStat(trackArtist)) return null
+    val credited = ArtistHelper.splitArtists(albumArtist).map { it.lowercase() }
+    return trackArtist.takeUnless { ArtistHelper.splitArtists(it).all { name -> name.lowercase() in credited } }
+}
+
 @Composable
-private fun AlbumTrackRow(
+internal fun AlbumTrackRow(
     number: Int,
     track: PlayableTrack,
     albumArtist: String,
@@ -779,9 +849,7 @@ private fun AlbumTrackRow(
     onMore: () -> Unit,
 ) {
     val colors = MaterialTheme.tunedColors
-    val featured = track.artist.takeIf {
-        it.isNotBlank() && !ArtistHelper.isPlayCountOrStat(it) && !it.equals(albumArtist, ignoreCase = true)
-    }
+    val featured = trackArtistLine(track.artist, albumArtist)
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -803,13 +871,20 @@ private fun AlbumTrackRow(
         }
         Spacer(Modifier.width(Space.md))
         Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(Space.xxs)) {
-            Text(
-                text = track.title,
-                style = AppType.body,
-                color = if (playing) colors.accent else colors.text1,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = track.title,
+                    style = AppType.body,
+                    color = if (playing) colors.accent else colors.text1,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                if (track.explicit) {
+                    Spacer(Modifier.width(Space.xs + Space.xxs))
+                    ExplicitTag()
+                }
+            }
             if (featured != null) {
                 Text(text = featured, style = AppType.bodyS, color = colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
@@ -829,7 +904,7 @@ private fun AlbumTrackRow(
  * then the record label. Date, ℗ and label come from Apple; YouTube only has the year.
  */
 @Composable
-private fun AlbumDetails(album: AlbumPageData, apple: AppleAlbumInfo?) {
+internal fun AlbumDetails(album: AlbumPageData, apple: AppleAlbumInfo?) {
     val colors = MaterialTheme.tunedColors
     val songs = pluralStringResource(R.plurals.alb_song_count, album.tracks.size, album.tracks.size)
     val length = album.durationText?.takeIf { it.isNotBlank() }
@@ -912,7 +987,7 @@ private fun AlbumLoading(title: String, artist: String, screenWidth: Dp) {
     }
 }
 
-private fun isTrackPlaying(isPlaying: Boolean, current: PlayableTrack?, track: PlayableTrack): Boolean {
+internal fun isTrackPlaying(isPlaying: Boolean, current: PlayableTrack?, track: PlayableTrack): Boolean {
     if (!isPlaying || current == null) return false
     if (current.videoId != null && track.videoId != null) return current.videoId == track.videoId
     return current.title.equals(track.title, ignoreCase = true)

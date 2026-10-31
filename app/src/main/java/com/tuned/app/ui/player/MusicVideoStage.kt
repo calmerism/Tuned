@@ -129,15 +129,50 @@ object MusicVideoMode {
 }
 
 /**
- * What the full player tells its artwork stage and backdrop: whether to run the video ([enabled]),
- * how far it has replaced the artwork ([cover], 0 to 1), and its two callbacks.
+ * What the full player tells its artwork stage and backdrop: the running video ([session], null
+ * when video mode is off or full screen), how far it has replaced the artwork ([cover], 0 to 1),
+ * and what a tap on it does.
  */
 internal class MusicVideoUi(
-    val enabled: Boolean,
+    val session: MusicVideoSession?,
     val cover: Float,
-    val onAvailable: (Boolean) -> Unit,
     val onFullscreen: () -> Unit,
 )
+
+/**
+ * The music video's own player and whether a frame of it is showing. The full player keeps it
+ * above its tabs, so opening lyrics or the queue doesn't tear it down: coming back shows the same
+ * running video at once, not the artwork until a new player's first frame.
+ */
+internal class MusicVideoSession(
+    val player: ExoPlayer,
+    val showing: Boolean,
+    val failed: Boolean,
+)
+
+@Composable
+internal fun rememberMusicVideoSession(
+    track: PlayableTrack,
+    musicPlayer: MusicPlayer,
+    viewModel: SyncedVideoViewModel = hiltViewModel(),
+): MusicVideoSession {
+    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    // Not keyed by the song: the video player reports false when it loads a new stream and true
+    // on its first frame. Resetting here on a song change could miss that pair when the stream
+    // stays the same, leaving the flag wrong.
+    var rendered by remember { mutableStateOf(false) }
+
+    LaunchedEffect(track.title, track.artist, track.videoId) {
+        viewModel.loadVideo(track.title, track.artist, track.videoId)
+    }
+
+    val videoPlayer = rememberSyncedVideoPlayer(uiState, musicPlayer) { rendered = it }
+    return MusicVideoSession(
+        player = videoPlayer,
+        showing = uiState is SyncedVideoUiState.Ready && rendered,
+        failed = uiState is SyncedVideoUiState.Error,
+    )
+}
 
 internal val LocalMusicVideo = compositionLocalOf<MusicVideoUi?> { null }
 
@@ -188,37 +223,21 @@ private fun VideoSurface(player: ExoPlayer, modifier: Modifier = Modifier) {
  * (never stretched or cropped), muted and kept on the song's clock. A video as wide as the
  * screen runs edge to edge with soft top and bottom edges; a narrower one gets rounded corners.
  * A full-screen button sits on its corner; the top bar's [SongVideoSwitch] goes back to the
- * artwork. [onAvailable] reports whether a frame is showing, so the caller keeps the artwork
- * until then and when the song has no video.
+ * artwork. The player itself is [session]'s, which outlives this stage.
  */
 @Composable
 internal fun MusicVideoStage(
-    track: PlayableTrack,
-    musicPlayer: MusicPlayer,
-    onAvailable: (Boolean) -> Unit,
+    session: MusicVideoSession,
     onFullscreen: () -> Unit,
     modifier: Modifier = Modifier,
-    viewModel: SyncedVideoViewModel = hiltViewModel(),
 ) {
-    val uiState by viewModel.uiState.collectAsStateWithLifecycle()
-    // Not keyed by the song: the video player reports false when it loads a new stream and true
-    // on its first frame. Resetting here on a song change could miss that pair when the stream
-    // stays the same, leaving the flag wrong.
-    var rendered by remember { mutableStateOf(false) }
-
-    LaunchedEffect(track.title, track.artist, track.videoId) {
-        viewModel.loadVideo(track.title, track.artist, track.videoId)
-    }
-
-    val videoPlayer = rememberSyncedVideoPlayer(uiState, musicPlayer) { rendered = it }
+    val videoPlayer = session.player
     val aspect = rememberVideoAspect(videoPlayer) ?: DEFAULT_ASPECT
-    // One answer for "is the video showing", used for its own fade and reported to the player on
-    // every frame, so the video and the artwork it replaces never show together.
-    val showing = uiState is SyncedVideoUiState.Ready && rendered
-    SideEffect { onAvailable(showing) }
-    val alpha by animateFloatAsState(if (showing) 1f else 0f, tween(VIDEO_FADE_MS), label = "musicVideoFade")
+    // Starts at the session's answer, so a stage that comes back over a running video shows it
+    // straight away instead of fading in again.
+    val alpha by animateFloatAsState(if (session.showing) 1f else 0f, tween(VIDEO_FADE_MS), label = "musicVideoFade")
 
-    if (uiState is SyncedVideoUiState.Error) return
+    if (session.failed) return
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
         // The stage sits inside the player's 24dp margin; a wide video reaches past it to the
         // screen's edges, a narrower one stays inside with rounded corners.

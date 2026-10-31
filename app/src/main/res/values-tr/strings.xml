@@ -335,9 +335,6 @@
 
     <!-- Yerel şarkılar -->
     <string name="local_add_to_playlist">Listeye ekle</string>
-    <string name="local_panel_title">Bu cihazdaki şarkılar</string>
-    <string name="local_panel_hint">Bir klasör seçin: içindeki her MP3, FLAC, WAV, OGG/Opus, M4A/ALAC veya AAC dosyası (alt klasörler dahil) etiketleri, kapağı ve .lrc sözleriyle uygulamaya kopyalanır.</string>
-    <string name="local_no_folder">Henüz klasör seçilmedi.</string>
     <string name="local_forget_folder">Bu klasörü unut (kopyalanan şarkılar kalır)</string>
     <string name="local_choose_folder">Klasör seç</string>
     <string name="local_rescan">Yeniden tara</string>
@@ -349,7 +346,6 @@
         <item quantity="one">%1$d dosya atlandı (desteklenmeyen biçim: %2$s)</item>
         <item quantity="other">%1$d dosya atlandı (desteklenmeyen biçim: %2$s)</item>
     </plurals>
-    <string name="local_storage_used">Yerel şarkıların kullandığı alan: %1$s</string>
 
     <!-- Dahili doğrudan çıkış (USB DAC olmadan mikser atlama) -->
     <string name="signal_label_internal">Dahili doğrudan çıkış</string>
@@ -1285,4 +1281,39 @@
     <string name="update_allow">Tuned\'un güncelleme yüklemesine izin ver, sonra dönüp Yükle\'ye dokun.</string>
     <string name="update_checking">Denetleniyor…</string>
     <string name="update_new">%1$s sürümü çıktı</string>
+    <string name="alb_version_missing">Bu sürüm YouTube Music\'te yok</string>
+    <string name="audio_cast_volume">Cast ses düzeyi</string>
+    <string name="local_all_folders">Tüm klasörler</string>
+    <string name="pin_add">Kitaplığa sabitle</string>
+    <string name="pin_remove">Kaldır</string>
+    <string name="pin_added">Kitaplığa sabitlendi</string>
+    <string name="pin_removed">Kaldırıldı</string>
+    <string name="pins_title">Sabitlenenler</string>
+    <string name="favourite_artists_title">Favori sanatçılar</string>
+    <string name="audio_eq_sub">Sesini 15 frekansta şekillendir</string>
+    <string name="audio_autoeq_sub">Kulaklığını nötr sese göre düzeltir</string>
+    <string name="recap_title">%1$d müziği</string>
+    <string name="recap_share">Paylaş</string>
+    <string name="recap_minutes_label">Dinlenen dakika</string>
+    <string name="recap_top_songs">En iyi şarkılar</string>
+    <string name="recap_top_artists">En iyi sanatçılar</string>
+    <string name="recap_empty">Bu yıl henüz bir şey yok. Bir şey çal, burada görünsün.</string>
+    <string name="settings_label_general">Genel</string>
+    <string name="settings_label_accounts">Hesaplar</string>
+    <string name="settings_label_listen_together">Birlikte dinle</string>
+    <string name="settings_label_app">Uygulama</string>
+    <string name="settings_label_output">Çıkış ve ses</string>
+    <string name="settings_label_liked">Beğenilen şarkılar</string>
+    <string name="settings_label_spotify">Spotify</string>
+    <string name="settings_label_advanced">Gelişmiş</string>
+    <string name="settings_label_scrobbling">Scrobble</string>
+    <string name="settings_label_home">Ana sayfa</string>
+    <string name="settings_label_presets">Ön ayarlar</string>
+    <string name="common_back">Geri</string>
+    <string name="common_more">Diğer seçenekler</string>
+    <string name="common_play">Oynat</string>
+    <string name="common_clear_search">Aramayı temizle</string>
+    <string name="recap_top_song">En iyi şarkın</string>
+    <string name="recap_top_artist">En iyi sanatçın</string>
+    <string name="local_albums">Albümler</string>
 </resources>

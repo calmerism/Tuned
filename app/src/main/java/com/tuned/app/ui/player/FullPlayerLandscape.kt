@@ -400,19 +400,28 @@ internal fun FullPlayerLandscape(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Column(Modifier.weight(1f)) {
-                    Text(
-                        track.title,
-                        style = MaterialTheme.typography.headlineMedium.copy(
-                            letterSpacing = (-0.35).sp,
-                            fontWeight = FontWeight.ExtraBold,
-                        ),
-                        color = Color.White,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .basicMarquee(iterations = Int.MAX_VALUE),
-                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
+                    ) {
+                        Text(
+                            track.title,
+                            style = MaterialTheme.typography.headlineMedium.copy(
+                                letterSpacing = (-0.35).sp,
+                                fontWeight = FontWeight.ExtraBold,
+                            ),
+                            color = Color.White,
+                            maxLines = 1,
+                            softWrap = false,
+                        )
+                        if (track.explicit) {
+                            Spacer(Modifier.width(com.tuned.app.ui.theme.Space.sm))
+                            com.tuned.app.ui.common.ExplicitTag(
+                                color = Color.White.copy(alpha = 0.72f),
+                                fontSize = com.tuned.app.ui.theme.ExplicitMark.textLarge,
+                            )
+                        }
+                    }
                     Spacer(Modifier.height(4.dp))
                     val splitArtists = remember(track.artist) {
                         com.tuned.app.util.ArtistHelper.splitArtists(track.artist)

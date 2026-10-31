@@ -211,6 +211,14 @@ fun FeedScreen(
     var miniTrayTrack by remember { mutableStateOf<TrackMiniTrayData?>(null) }
     // Sections hidden via Settings → Home sections.
     val hiddenSections by viewModel.hiddenHomeSections.collectAsStateWithLifecycle()
+    var showPlayground by remember { mutableStateOf(false) }
+    if (showPlayground) {
+        com.tuned.app.ui.playlist.PlaygroundHost(
+            viewModel = hiltViewModel(),
+            onDismiss = { showPlayground = false },
+            onSaved = onOpenPlaylist,
+        )
+    }
     val podcastsEnabled by viewModel.podcastsEnabled.collectAsStateWithLifecycle()
     fun isSectionVisible(section: HomeSection) = section.id !in hiddenSections
     val snackbarHostState = remember { SnackbarHostState() }
@@ -277,7 +285,7 @@ fun FeedScreen(
                 HomeHeader(
                     greeting = stringResource(R.string.feed_home),
                     date = "",
-                    onOpenGenerator = onOpenGenerator,
+                    onOpenPlayground = { showPlayground = true },
                     onOpenDownloads = onOpenDownloads,
                     onOpenSettings = onOpenSettings,
                 )
@@ -547,7 +555,7 @@ fun FeedScreen(
                         }
                         }
 
-                        if (showSynthetic) {
+                        if (showSynthetic && isSectionVisible(HomeSection.TASTE_STRIP)) {
                             val displayTags = state.feedData.tasteTags.ifEmpty {
                                 listOf("Rock", "Indie", "Pop", "Electronic", "Hip-Hop", "R&B", "Synthwave", "Alternative")
                             }
@@ -908,6 +916,7 @@ fun FeedScreen(
                                     title = track.title,
                                     subtitle = ArtistHelper.primaryArtist(track.artist),
                                     artworkUrl = track.artworkUrl,
+                                    explicit = track.explicit,
                                     onClick = { viewModel.playTrack(track, "Top Charts") },
                                     onLongClick = {
                                         miniTrayTrack = TrackMiniTrayData(

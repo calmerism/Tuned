@@ -141,7 +141,7 @@ fun ModulesScreen(
                 title = { Text(stringResource(R.string.settings_modules_title)) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = null)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
             )
@@ -404,7 +404,7 @@ private fun ModuleRow(
             }
             Switch(checked = module.enabled, onCheckedChange = onToggle)
             IconButton(onClick = onRemove) {
-                Icon(Icons.Filled.Delete, contentDescription = null)
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.common_delete))
             }
         }
     }

@@ -382,9 +382,9 @@
     <string name="settings_search_title">Search settings</string>
     <!-- Local songs -->
     <string name="local_add_to_playlist">Add to a playlist</string>
-    <string name="local_panel_title">Songs from this device</string>
-    <string name="local_panel_hint">Pick a folder: every MP3, FLAC, WAV, OGG/Opus, M4A/ALAC or AAC file inside it (sub-folders included) is copied into the app with its tags, cover and .lrc lyrics.</string>
-    <string name="local_no_folder">No folder chosen yet.</string>
+    <string name="local_add_folder">Add folder</string>
+    <string name="local_empty_hint">Copy in songs from a folder on this phone, with their tags, covers and lyrics.</string>
+    <string name="local_storage_short">%1$s used</string>
     <string name="local_forget_folder">Forget this folder (copied songs stay)</string>
     <string name="local_choose_folder">Choose a folder</string>
     <string name="local_rescan">Rescan</string>
@@ -396,7 +396,6 @@
         <item quantity="one">%1$d file skipped (unsupported format: %2$s)</item>
         <item quantity="other">%1$d files skipped (unsupported format: %2$s)</item>
     </plurals>
-    <string name="local_storage_used">Space used by local songs: %1$s</string>
     <!-- Fork: internal direct output (mixer bypass without a USB DAC) -->
     <string name="signal_label_internal">Internal direct output</string>
     <string name="signal_detail_internal_resampled">Output fixed at %2$d Hz\n%1$d Hz resampled in-app (libsoxr)</string>
@@ -1444,6 +1443,7 @@
     <string name="cmp_remove">Remove</string>
     <string name="cmp_see_all">See all</string>
     <string name="cmp_now_playing">Now playing</string>
+    <string name="cmp_explicit">Explicit</string>
     <string name="cmp_downloaded">Downloaded</string>
     <string name="cmp_unavailable">Unavailable</string>
     <string name="cmp_selected">Selected</string>
@@ -1558,4 +1558,42 @@
     <string name="update_allow">Allow Tuned to install updates, then come back and tap Install.</string>
     <string name="update_checking">Checking…</string>
     <string name="update_new">Version %1$s is out</string>
+    <string name="alb_version_missing">This version isn\'t on YouTube Music</string>
+    <string name="audio_cast_volume">Cast volume</string>
+    <string name="local_all_folders">All folders</string>
+    <string name="pin_add">Pin to Library</string>
+    <string name="pin_remove">Unpin</string>
+    <string name="pin_added">Pinned to Library</string>
+    <string name="pin_removed">Unpinned</string>
+    <string name="pins_title">Pinned</string>
+    <string name="favourite_artists_title">Favourite artists</string>
+    <string name="audio_eq_sub">Shape your sound across 15 frequencies</string>
+    <string name="audio_autoeq_sub">Correct your headphones to a neutral sound</string>
+    <string name="recap_title">%1$d in music</string>
+    <string name="recap_share">Share</string>
+    <string name="recap_minutes_label">Minutes listened</string>
+    <string name="recap_top_songs">Top songs</string>
+    <string name="recap_top_artists">Top artists</string>
+    <string name="recap_empty">Nothing yet this year. Play something and it will show up here.</string>
+    <plurals name="recap_songs"><item quantity="one">%1$d song</item><item quantity="other">%1$d songs</item></plurals>
+    <plurals name="recap_artists"><item quantity="one">%1$d artist</item><item quantity="other">%1$d artists</item></plurals>
+    <plurals name="recap_artist_minutes"><item quantity="one">%1$d minute</item><item quantity="other">%1$d minutes</item></plurals>
+    <string name="settings_label_general">General</string>
+    <string name="settings_label_accounts">Accounts</string>
+    <string name="settings_label_listen_together">Listen together</string>
+    <string name="settings_label_app">App</string>
+    <string name="settings_label_output">Output and loudness</string>
+    <string name="settings_label_liked">Liked songs</string>
+    <string name="settings_label_spotify">Spotify</string>
+    <string name="settings_label_advanced">Advanced</string>
+    <string name="settings_label_scrobbling">Scrobbling</string>
+    <string name="settings_label_home">Home</string>
+    <string name="settings_label_presets">Presets</string>
+    <string name="common_back">Back</string>
+    <string name="common_more">More options</string>
+    <string name="common_play">Play</string>
+    <string name="common_clear_search">Clear search</string>
+    <string name="recap_top_song">Your top song</string>
+    <string name="recap_top_artist">Your top artist</string>
+    <string name="local_albums">Albums</string>
 </resources>

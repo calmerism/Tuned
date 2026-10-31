@@ -49,6 +49,40 @@ import com.tuned.app.R
 import com.tuned.app.data.generate.GeneratedTrack
 import kotlinx.coroutines.launch
 
+/** The Playground sheet, wired up: Library and the Home header both open it. */
+@Composable
+internal fun PlaygroundHost(
+    viewModel: PlaylistViewModel,
+    onDismiss: () -> Unit,
+    onSaved: (Long) -> Unit = {},
+) {
+    val musicPlayer = com.tuned.app.ui.player.LocalMusicPlayer.current
+    val subtitle = androidx.compose.ui.res.stringResource(com.tuned.app.R.string.playground_title)
+    PlaylistPlaygroundSheet(
+        create = viewModel::createFromIdea,
+        onPlay = { tracks ->
+            onDismiss()
+            musicPlayer.playQueue(
+                tracks.map { track ->
+                    com.tuned.app.playback.PlayableTrack(
+                        title = track.name,
+                        artist = track.artist,
+                        album = track.album,
+                        artworkUrl = track.artworkUrl,
+                        videoId = Regex("v=([A-Za-z0-9_-]{11})").find(track.url)?.groupValues?.get(1),
+                    )
+                },
+                sourceLabel = subtitle,
+            )
+        },
+        onSave = { idea, tracks ->
+            onDismiss()
+            viewModel.savePlayground(idea, tracks, subtitle, onSaved)
+        },
+        onDismiss = onDismiss,
+    )
+}
+
 /**
  * Turns an idea into a playlist. [create] builds the list, [onPlay] and [onSave] act on
  * the result. The list comes from YouTube Music searches for the idea, not a language

@@ -470,7 +470,7 @@ class FeedRepository @Inject constructor(
             repeat(relatedLists.maxOfOrNull { it.size } ?: 0) { i -> relatedLists.forEach { list -> list.getOrNull(i)?.let(::add) } }
         }.filter { it.videoId.isNotBlank() && (it.artist.trim().lowercase() to it.title.trim().lowercase()) !in playedKeys }
         val listeningPicks = diversify(
-            blend(first = relatedRoundRobin, second = played.take(5)),
+            innerTube.withVideoLabels(blend(first = relatedRoundRobin, second = played.take(5))).filterNot { it.looksLikeVideo },
             YouTubeMusicTrack::artist,
             maxPerArtist = 2,
         ).distinctBy { it.videoId }.take(15)
@@ -520,7 +520,7 @@ class FeedRepository @Inject constructor(
             second = diversify(freshOrChart, YouTubeMusicTrack::artist, maxPerArtist = 1),
         )
 
-        val quickPicks = if (hasListeningHistory) listeningPicks else diversify(quickCandidates, YouTubeMusicTrack::artist, maxPerArtist = 2)
+        val rawQuickPicks = if (hasListeningHistory) listeningPicks else diversify(quickCandidates, YouTubeMusicTrack::artist, maxPerArtist = 2)
             .take(18)
             .ifEmpty { charts }
             .distinctBy { it.artist.trim().lowercase() to it.title.trim().lowercase() }
@@ -529,6 +529,8 @@ class FeedRepository @Inject constructor(
             .ifEmpty { shelfSongs }
             .ifEmpty { previous?.quickPicks.orEmpty() }
             .ifEmpty { savedQuickPicks }
+        // Play history and saved picks carry no label, so ask before they can show as songs.
+        val quickPicks = innerTube.withVideoLabels(rawQuickPicks)
 
         onUpdate(shelf(quickPicks, hasListeningHistory))
 

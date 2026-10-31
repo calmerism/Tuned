@@ -239,6 +239,7 @@ fun ExpressiveGroupTrackRow(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     isPlaying: Boolean = false,
+    explicit: Boolean = false,
     onLongClick: (() -> Unit)? = null,
     leading: @Composable () -> Unit,
     trailing: (@Composable () -> Unit)? = null,
@@ -290,14 +291,21 @@ fun ExpressiveGroupTrackRow(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    subtitle,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
-                    else MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val subtitleColor = if (isPlaying) MaterialTheme.colorScheme.primary.copy(alpha = 0.8f)
+                else MaterialTheme.colorScheme.onSurfaceVariant
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (explicit) {
+                        ExplicitTag(color = subtitleColor)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(
+                        subtitle,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = subtitleColor,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
             trailing?.invoke()
         }

@@ -64,7 +64,22 @@ internal class CastPlayback(
         castContext.sessionManager.currentCastSession?.takeIf { it.isConnected }?.let(::attach)
     }
 
+    private val castListener = object : com.google.android.gms.cast.Cast.Listener() {
+        override fun onVolumeChanged() {
+            session?.let { active -> runCatching { owner.onCastVolumeChanged(active.volume.toFloat()) } }
+        }
+    }
+
+    /** Sets the Cast device's own volume, 0 to 1. */
+    fun setVolume(volume: Float) {
+        runCatching { session?.setVolume(volume.toDouble().coerceIn(0.0, 1.0)) }
+            .onFailure { android.util.Log.w("CastPlayback", "Could not set Cast volume", it) }
+    }
+
     private fun attach(newSession: CastSession) {
+        session?.removeCastListener(castListener)
+        newSession.addCastListener(castListener)
+        runCatching { owner.onCastVolumeChanged(newSession.volume.toFloat()) }
         client?.unregisterCallback(callback)
         client?.removeProgressListener(progress)
         session = newSession
@@ -174,6 +189,8 @@ internal class CastPlayback(
     }
 
     private fun detach() {
+        session?.removeCastListener(castListener)
+        owner.onCastVolumeChanged(null)
         loadJob?.cancel()
         client?.unregisterCallback(callback)
         client?.removeProgressListener(progress)

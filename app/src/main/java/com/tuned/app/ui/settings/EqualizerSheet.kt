@@ -369,7 +369,7 @@ internal fun EqualizerSheet(
             )
 
             // Presets Horizontal Flow
-            SectionLabel("Presets")
+            SectionLabel(stringResource(R.string.settings_label_presets))
             FlowRow(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),

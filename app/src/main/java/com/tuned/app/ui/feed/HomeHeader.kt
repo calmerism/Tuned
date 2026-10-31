@@ -41,7 +41,7 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -76,7 +76,7 @@ import com.tuned.app.ui.theme.tunedColors
 fun HomeHeader(
     greeting: String,
     date: String,
-    onOpenGenerator: () -> Unit,
+    onOpenPlayground: () -> Unit,
     onOpenDownloads: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier,
@@ -101,7 +101,7 @@ fun HomeHeader(
             )
             if (date.isNotBlank()) Text(date, style = AppType.bodyS, color = colors.text2)
         }
-        AppIconButton(Icons.AutoMirrored.Filled.PlaylistAdd, "New mix", onClick = onOpenGenerator)
+        AppIconButton(Icons.Filled.AutoAwesome, stringResource(R.string.playground_title), onClick = onOpenPlayground)
         AppIconButton(Icons.Filled.Download, "Downloads", onClick = onOpenDownloads)
         AppIconButton(Icons.Filled.Settings, "Settings", onClick = onOpenSettings)
     }

@@ -12,6 +12,23 @@ data class ArtistAlbumItem(
     val artworkUrl: String? = null,
 )
 
+/** An album title without its edition: "BULLY - DELUXE" and "BULLY (Deluxe)" are both "bully". */
+internal fun albumBaseTitle(title: String): String =
+    title.replace(Regex("""\s*[(\[][^)\]]*[)\]]"""), "")
+        .replace(Regex("""\s+[-–—]\s+.*$"""), "")
+        .trim()
+        .lowercase()
+
+/**
+ * Whether a shelf on an album page lists other editions of that album. YouTube translates the
+ * heading, so outside English the shelf is recognised by every entry having the album's title.
+ */
+internal fun isOtherVersionsShelf(heading: String, albumTitle: String, itemTitles: List<String>): Boolean {
+    if (heading.contains("version", ignoreCase = true)) return true
+    val base = albumBaseTitle(albumTitle)
+    return base.isNotEmpty() && itemTitles.isNotEmpty() && itemTitles.all { albumBaseTitle(it) == base }
+}
+
 @Immutable
 data class ArtistSummaryItem(
     val name: String,
@@ -72,4 +89,8 @@ data class AlbumPageData(
     val genres: List<String> = emptyList(),
     val tracks: List<PlayableTrack> = emptyList(),
     val otherAlbums: List<ArtistAlbumItem> = emptyList(),
+    /** YouTube's own links to other editions of this album. Search often can't find them. */
+    val otherVersions: List<ArtistAlbumItem> = emptyList(),
+    /** YouTube Music marks the album explicit. */
+    val explicit: Boolean = false,
 )

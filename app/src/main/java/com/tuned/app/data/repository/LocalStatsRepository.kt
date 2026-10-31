@@ -21,6 +21,7 @@ import javax.inject.Singleton
 class LocalStatsRepository @Inject constructor(
     private val playlistRepository: PlaylistRepository,
     private val downloadedTrackDao: DownloadedTrackDao,
+    private val playStatsDao: com.tuned.app.data.local.db.SongPlayStatsDao,
 ) {
     data class LocalStats(
         val stats: HomeStats,
@@ -55,9 +56,6 @@ class LocalStatsRepository @Inject constructor(
             .toSet().size.toLong()
         val distinctAlbums = maxOf(albumKeys, downloadAlbums)
 
-        // Listening-time estimate reuses Home's 210s/track convention so the
-        // timer reads consistently between local and Last.fm modes.
-        val scrobbles = totalPlays + downloaded.size.toLong()
 
         val topTracks = playCounts.entries
             .sortedByDescending { it.value }
@@ -109,13 +107,17 @@ class LocalStatsRepository @Inject constructor(
                 )
             }
 
+        // The headline figures are what was really heard, from the same log as the recap.
+        // Saved songs aren't plays, and a saved library said "1 play, 3m 30s" after 25 minutes.
+        val played = runCatching { playStatsDao.allListened() }.getOrDefault(emptyList())
         return LocalStats(
             stats = HomeStats(
-                scrobbles = scrobbles,
-                trackCount = distinctTracks,
-                artistCount = distinctArtists,
+                scrobbles = played.sumOf { maxOf(it.playCount, 1).toLong() },
+                trackCount = played.size.toLong(),
+                artistCount = played.map { com.tuned.app.util.ArtistHelper.primaryArtist(it.artist).lowercase() }.distinct().size.toLong(),
                 albumCount = distinctAlbums,
                 avatarUrl = null,
+                listenedSeconds = played.sumOf { it.totalPlayTimeMs } / 1000L,
             ),
             topTracks = topTracks,
             topArtists = topArtists,

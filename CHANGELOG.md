@@ -14,6 +14,14 @@
 - **Sing:** lowers the vocals from the lyrics screen. It's a rough reducer, so centred instruments dip too.
 - **Lyrics:** duets, background vocals, and one translate and pronounce button.
 - **AutoPlay toggle** in the queue, and **Music Haptics**.
+- **Yearly recap** on the You tab: minutes listened, top song, top artists, with a share card. Counting starts from your all-time plays, so the first year is approximate.
+- **Pins:** pin songs, albums and artists from their menus; they sit at the top of Library with Liked Songs. Long-press to unpin.
+- **Local albums:** songs on the phone group into albums by tag or folder, each with its own page, and folder chips filter the list when you have more than one folder.
+- **YouTube Music links** open the album, playlist or artist in Tuned instead of playing straight away; a song link inside a playlist plays from that song.
+- **Explicit tags** on songs and albums: in lists, after album and song titles, in the player, search and the queue.
+- **Cast volume** from the volume keys, the system panel and the Sound sheet.
+- **EQ and AutoEQ** are one tap away from the Sound sheet.
+- **Playlist Playground** also opens from the Home header.
 
 ### Changed
 - **Loading indicator:** one circular spinner everywhere, including pull-to-refresh.
@@ -21,6 +29,13 @@
 - **Logo:** the flower in notifications.
 - **Text:** widget, Jam, queue and audio-speed labels can now be translated; sentence case throughout; no "·" separators; "Synced 1 playlist" reads correctly.
 - **Code:** package `com.tuned.app`, with saved-data names kept in `data/StorageNames.kt` so nothing is lost on update.
+- **Local songs page:** each folder is one row with its song count; Add folder and Rescan sit under them, and local albums drop the share button.
+- **Music videos** keep playing while you open lyrics or the queue, and the page stays dimmed on every tab in video mode.
+- **Streaming:** streams are checked before playing, more YouTube clients are tried, DNS falls back to DNS-over-HTTPS, media loads in ranges, and age-restricted songs play.
+- **Hide the dock** now lets you swipe between tabs, and the Tuned font applies to all text.
+- **You tab** play counts come from what you actually played.
+- **Album tracks** only show artists who aren't already in the album's credit.
+- **Other versions** uses YouTube Music's own list of editions.
 
 ### Fixed
 - Closing the app now stops the music.
@@ -33,6 +48,14 @@
 - The About page had no way in; App language now sits in Appearance, and Share logs and the licences in Data and storage.
 - Lossless add-on requests never being signed: the native check expected a package name the app didn't have.
 - The lyrics source list showing a backend's name instead of "Apple Lyrics".
+- Artist pages that search can't find, such as ¥$, opening empty.
+- Music videos showing up in Quick picks, and songs playing their music video's audio.
+- Other versions reopening the same album.
+- Album tracks showing a single's cover.
+- The paused cover glitching when the player opens.
+- Player colours not updating between songs from the same album.
+- A blank screen after pressing back, seeking in downloaded songs, a USB freeze and a search crash.
+- The Taste strip ignoring its Home toggle.
 
 ## [0.1.0]
 

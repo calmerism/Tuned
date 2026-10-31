@@ -34,6 +34,9 @@ data class GeneratedTrack(
     val playcount: Long? = null,
     val match: Double? = null,
     val album: String? = null,
+    /** From the file's tag, for local songs. */
+    val trackNumber: Int? = null,
+    val year: String? = null,
 ) {
     /**
      * Normalized identity: trimmed, inner whitespace collapsed, lowercased.
@@ -164,10 +167,12 @@ data class StoredTrack(
     val url: String? = "",
     val image: String? = null,
     val album: String? = null,
+    val trackNumber: Int? = null,
+    val year: String? = null,
 )
 
-fun GeneratedTrack.toStored() = StoredTrack(name = name, artist = artist, url = url, image = artworkUrl, album = album)
-fun StoredTrack.toGenerated() = GeneratedTrack(name = name.orEmpty(), artist = artist.orEmpty(), artworkUrl = image, url = url.orEmpty(), album = album)
+fun GeneratedTrack.toStored() = StoredTrack(name = name, artist = artist, url = url, image = artworkUrl, album = album, trackNumber = trackNumber, year = year)
+fun StoredTrack.toGenerated() = GeneratedTrack(name = name.orEmpty(), artist = artist.orEmpty(), artworkUrl = image, url = url.orEmpty(), album = album, trackNumber = trackNumber, year = year)
 
 fun GeneratedTrack.youtubeVideoIdOrNull(): String? {
     val value = url.trim()

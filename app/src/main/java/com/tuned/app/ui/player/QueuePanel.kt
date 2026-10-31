@@ -385,13 +385,19 @@ internal fun QueuePanel(state: MusicPlayerState, player: MusicPlayer, modifier: 
                                 style = AppType.body,
                                 color = if (isCurrent) colors.accent else Color.White,
                             )
-                            Text(
-                                item.artist,
-                                style = AppType.bodyS,
-                                color = Color.White.copy(alpha = 0.62f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                if (item.explicit) {
+                                    com.tuned.app.ui.common.ExplicitTag(color = Color.White.copy(alpha = 0.62f))
+                                    Spacer(Modifier.width(Space.xs + Space.xxs))
+                                }
+                                Text(
+                                    item.artist,
+                                    style = AppType.bodyS,
+                                    color = Color.White.copy(alpha = 0.62f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                            }
                         }
                         if (!isQueueLocked) {
                             Icon(

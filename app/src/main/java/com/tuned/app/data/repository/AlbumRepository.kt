@@ -27,6 +27,23 @@ class AlbumRepository @Inject constructor(
 ) {
     private val json = Json { ignoreUnknownKeys = true }
 
+    /**
+     * The YouTube Music page for another edition of an album, or null when YouTube doesn't
+     * carry it. YouTube often has one edition only, and falling back to the closest result
+     * would land back on the page the listener is leaving.
+     */
+    suspend fun findOtherVersion(title: String, artist: String, currentBrowseId: String): String? = withContext(Dispatchers.IO) {
+        val wanted = title.trim()
+        runCatching { innerTube.searchAlbums("$wanted $artist".trim(), limit = 15) }.getOrDefault(emptyList())
+            .firstOrNull { album ->
+                album.browseId != currentBrowseId &&
+                    album.name.trim().equals(wanted, ignoreCase = true) &&
+                    (album.artist == null || artist.isBlank() ||
+                        album.artist.contains(artist, ignoreCase = true) || artist.contains(album.artist, ignoreCase = true))
+            }
+            ?.browseId
+    }
+
     suspend fun getAlbumDetails(
         albumTitle: String,
         artistName: String = "",
@@ -142,6 +159,8 @@ class AlbumRepository @Inject constructor(
                     description = description,
                     tracks = tracks,
                     otherAlbums = ytData?.otherAlbums.orEmpty(),
+                    otherVersions = ytData?.otherVersions.orEmpty(),
+                    explicit = ytData?.explicit == true || tracks.any { it.explicit },
                 )
                 if (tracks.isNotEmpty()) onLoaded(pageData)
                 val lfmData = lastFmDeferred.await()

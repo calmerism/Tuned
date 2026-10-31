@@ -120,9 +120,10 @@ internal fun DetailToolbar(
     title: String,
     showTitle: Boolean,
     onBack: () -> Unit,
-    onShare: () -> Unit,
+    /** Null leaves the capsule out: a page with nothing to share or add, such as a local album. */
+    onShare: (() -> Unit)?,
     shareLabel: String,
-    menu: @Composable (dismiss: () -> Unit) -> Unit,
+    menu: (@Composable (dismiss: () -> Unit) -> Unit)?,
     modifier: Modifier = Modifier,
     /** The capsule's first button: Share by default; playlists put Search there. */
     actionIcon: ImageVector = TunedIcons.Share,
@@ -143,6 +144,11 @@ internal fun DetailToolbar(
             AnimatedVisibility(visible = showTitle, enter = fadeIn(), exit = fadeOut()) {
                 Text(title, style = AppType.title, color = colors.text1, maxLines = 1, overflow = TextOverflow.Ellipsis)
             }
+        }
+        if (onShare == null || menu == null) {
+            // Keeps the title centred where the capsule would have been.
+            Spacer(Modifier.width(Sizes.touch))
+            return@Row
         }
         Row(
             modifier = Modifier.glassSurface(AppShape.full, fill = glassFill(), hairline = true),
@@ -419,6 +425,7 @@ internal fun DetailTrackRow(
     onLongClick: (() -> Unit)?,
     onMore: () -> Unit,
     modifier: Modifier = Modifier,
+    explicit: Boolean = false,
     trailing: (@Composable () -> Unit)? = null,
 ) {
     val colors = MaterialTheme.tunedColors
@@ -454,8 +461,14 @@ internal fun DetailTrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            if (subtitle.isNotBlank()) {
-                Text(text = subtitle, style = AppType.bodyS, color = colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank() || explicit) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (explicit) {
+                        ExplicitTag()
+                        Spacer(Modifier.width(Space.xs + Space.xxs))
+                    }
+                    Text(text = subtitle, style = AppType.bodyS, color = colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         trailing?.invoke()

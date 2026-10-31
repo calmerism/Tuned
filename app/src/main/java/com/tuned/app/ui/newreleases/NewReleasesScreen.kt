@@ -262,6 +262,7 @@ fun NewReleasesScreen(
                                         subtitle = subtitle,
                                         position = groupPositionFor(index, state.tracks.size),
                                         isPlaying = isPlayingThis,
+                                        explicit = track.explicit,
                                         onClick = { viewModel.playTrack(index) },
                                         onLongClick = { menuTrack = track },
                                         modifier = Modifier.padding(horizontal = 16.dp),

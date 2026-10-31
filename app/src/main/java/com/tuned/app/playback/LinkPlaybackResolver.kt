@@ -19,12 +19,16 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 private const val TAG = "LinkPlaybackResolver"
+/** Routes need a name; the page replaces these with the real one as soon as it loads. */
+private const val LINK_ALBUM_TITLE = "Album"
+private const val LINK_ARTIST_NAME = "Artist"
 
 @Singleton
 class LinkPlaybackResolver @Inject constructor(
     private val musicPlayer: MusicPlayer,
     private val innerTube: InnerTubeMusicApi,
     private val http: OkHttpClient,
+    private val routeNavigator: com.tuned.app.ui.navigation.AppRouteNavigator,
 ) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val json = Json { ignoreUnknownKeys = true }
@@ -93,44 +97,60 @@ class LinkPlaybackResolver @Inject constructor(
     }
 
     private suspend fun resolveYouTube(url: String) {
-        // A) Playlist URL
-        if (url.contains("list=")) {
-            val playlist = innerTube.fetchPlaylist(url)
-            if (playlist != null && playlist.tracks.isNotEmpty()) {
-                val playableList = playlist.tracks.map { it.toPlayable() }
+        when (val link = parseYouTubeLink(url)) {
+            // A link to a list or an artist opens its page; nothing starts until it's chosen.
+            is YouTubeLink.Album -> routeNavigator.navigateTo(
+                com.tuned.app.ui.navigation.Screen.AlbumDetail.createRoute(LINK_ALBUM_TITLE, "", link.browseId),
+            )
+            is YouTubeLink.Playlist -> routeNavigator.navigateTo(
+                com.tuned.app.ui.navigation.Screen.FeedPlaylistDetail.createRoute(link.id),
+            )
+            is YouTubeLink.Artist -> {
+                // The page looks up photos and video by name, so it needs the real one.
+                val name = runCatching { innerTube.fetchArtistPage(link.browseId) }.getOrNull()?.name
+                routeNavigator.navigateTo(
+                    com.tuned.app.ui.navigation.Screen.ArtistDetail.createRoute(
+                        name?.takeIf(String::isNotBlank) ?: LINK_ARTIST_NAME,
+                        link.browseId,
+                    ),
+                )
+            }
+            is YouTubeLink.Track -> playTrackLink(url, link)
+            null -> extractYouTubeVideoId(url)?.takeIf(String::isNotBlank)?.let { playTrackLink(url, YouTubeLink.Track(it)) }
+        }
+    }
+
+    private suspend fun playTrackLink(url: String, link: YouTubeLink.Track) {
+        val videoId = link.videoId
+        val listId = link.listId
+        // A mix (RD...) is built around the song, and the player makes its own radio.
+        if (listId != null && !listId.startsWith("RD")) {
+            val playlist = runCatching { innerTube.fetchPlaylist(listId) }.getOrNull()
+            val tracks = playlist?.tracks.orEmpty()
+            val start = tracks.indexOfFirst { it.videoId == videoId }
+            if (playlist != null && start >= 0) {
                 withContext(Dispatchers.Main) {
-                    musicPlayer.playQueue(playableList, startIndex = 0, sourceLabel = playlist.title)
+                    musicPlayer.playQueue(tracks.map { it.toPlayable() }, startIndex = start, sourceLabel = playlist.title)
                 }
                 return
             }
         }
-
-        // B) Direct Song / Video URL
-        val videoId = extractYouTubeVideoId(url)
-        if (!videoId.isNullOrBlank()) {
-            val songDetails = innerTube.fetchSongDetails(videoId)
-            val playable = if (songDetails != null) {
-                songDetails.toPlayable()
-            } else {
-                val tracks = innerTube.searchSongs(videoId, limit = 1)
-                val matched = tracks.firstOrNull { it.videoId == videoId }
-                    ?: innerTube.searchSongs(url, limit = 1).firstOrNull()
-
-                if (matched != null) {
-                    matched.toPlayable()
-                } else {
-                    PlayableTrack(
-                        title = "YouTube Stream",
-                        artist = "YouTube Music",
-                        artworkUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
-                        videoId = videoId,
-                    )
-                }
-            }
-
-            withContext(Dispatchers.Main) {
-                musicPlayer.play(playable, sourceLabel = "YouTube Music", startRadio = true)
-            }
+        val songDetails = innerTube.fetchSongDetails(videoId)
+        val playable = if (songDetails != null) {
+            songDetails.toPlayable()
+        } else {
+            val tracks = innerTube.searchSongs(videoId, limit = 1)
+            val matched = tracks.firstOrNull { it.videoId == videoId }
+                ?: innerTube.searchSongs(url, limit = 1).firstOrNull()
+            matched?.toPlayable() ?: PlayableTrack(
+                title = "YouTube Stream",
+                artist = "YouTube Music",
+                artworkUrl = "https://i.ytimg.com/vi/$videoId/hqdefault.jpg",
+                videoId = videoId,
+            )
+        }
+        withContext(Dispatchers.Main) {
+            musicPlayer.play(playable, sourceLabel = "YouTube Music", startRadio = true)
         }
     }
 
@@ -201,6 +221,7 @@ class LinkPlaybackResolver @Inject constructor(
                 artworkUrl = artworkUrl ?: match.artworkUrl,
                 videoId = match.videoId,
                 durationMs = match.durationSeconds?.takeIf { it > 0 }?.times(1_000L),
+                explicit = match.explicit,
             )
         } else {
             PlayableTrack(
@@ -230,5 +251,6 @@ class LinkPlaybackResolver @Inject constructor(
         artworkUrl = artworkUrl,
         videoId = videoId,
         durationMs = durationSeconds?.takeIf { it > 0 }?.times(1_000L),
+        explicit = explicit,
     )
 }

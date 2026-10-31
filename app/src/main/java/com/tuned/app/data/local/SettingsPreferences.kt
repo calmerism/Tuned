@@ -216,8 +216,7 @@ enum class HomeSection(val id: String, val titleRes: Int, val subtitleRes: Int) 
     HEAVY_ROTATION("heavy_rotation", com.tuned.app.R.string.home_section_heavy_title, com.tuned.app.R.string.home_section_heavy_sub),
     ALBUMS("albums_in_rotation", com.tuned.app.R.string.home_section_albums_title, com.tuned.app.R.string.home_section_albums_sub),
     CHARTS("trending_charts", com.tuned.app.R.string.home_section_charts_title, com.tuned.app.R.string.home_section_charts_sub),
-    NEW_RELEASES("new_releases", com.tuned.app.R.string.home_section_releases_title, com.tuned.app.R.string.home_section_releases_sub),
-    FRIENDS("friends_activity", com.tuned.app.R.string.home_section_friends_title, com.tuned.app.R.string.home_section_friends_sub);
+    NEW_RELEASES("new_releases", com.tuned.app.R.string.home_section_releases_title, com.tuned.app.R.string.home_section_releases_sub);
 
     companion object {
         fun fromId(id: String?): HomeSection? =

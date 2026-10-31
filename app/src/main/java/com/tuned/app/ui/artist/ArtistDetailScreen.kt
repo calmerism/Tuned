@@ -12,6 +12,7 @@ import com.tuned.app.ui.theme.liquidGlassChrome
 import com.tuned.app.ui.theme.liquidGlassSource
 import com.tuned.app.ui.theme.rememberLayerBackdrop
 import com.tuned.app.ui.common.skeletonAlpha
+import com.tuned.app.ui.common.ExplicitTag
 import com.tuned.app.ui.common.TrackRowDensity
 import com.tuned.app.ui.common.SkeletonTrackRow
 import androidx.compose.ui.draw.alpha
@@ -87,6 +88,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.SmartDisplay
+import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Shuffle
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.AssistChipDefaults
@@ -293,6 +295,9 @@ fun ArtistDetailScreen(
     val favoriteMessage = stringResource(R.string.art_favorited)
     val unfavoriteMessage = stringResource(R.string.art_unfavorited)
     val copiedMessage = stringResource(R.string.art_link_copied)
+    val pinnedMessage = stringResource(R.string.pin_added)
+    val unpinnedMessage = stringResource(R.string.pin_removed)
+    val pinsViewModel: com.tuned.app.ui.common.PinsViewModel = hiltViewModel()
     val toggleFavorite: () -> Unit = {
         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
         val nowFavorite = viewModel.toggleFavorite()
@@ -567,6 +572,17 @@ fun ArtistDetailScreen(
             onShare = shareArtist,
             shareLabel = stringResource(R.string.art_share),
             menu = { dismiss ->
+                val artistPin = com.tuned.app.data.library.PinnedItem(
+                    kind = com.tuned.app.data.library.PinKind.ARTIST,
+                    title = displayName,
+                    artworkUrl = data?.artworkUrl,
+                    browseId = browseId,
+                )
+                DetailMenuItem(Icons.Rounded.PushPin, stringResource(if (pinsViewModel.isPinned(artistPin)) R.string.pin_remove else R.string.pin_add)) {
+                    dismiss()
+                    val now = pinsViewModel.toggle(artistPin)
+                    undo?.show(if (now) pinnedMessage else unpinnedMessage)
+                }
                 DetailMenuItem(Icons.Rounded.Shuffle, stringResource(R.string.art_shuffle_cd)) { dismiss(); viewModel.playShuffle() }
                 DetailMenuItem(TunedIcons.Mix, stringResource(R.string.art_radio_cd)) { dismiss(); viewModel.startArtistMix() }
                 // Photo or the artist's video in the header (only when Apple has a video).
@@ -1038,7 +1054,13 @@ private fun ArtistSongRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(text = subtitle, style = AppType.bodyS, color = colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (track.explicit) {
+                    ExplicitTag()
+                    Spacer(Modifier.width(Space.xs + Space.xxs))
+                }
+                Text(text = subtitle, style = AppType.bodyS, color = colors.text2, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            }
         }
         AppIconButton(
             icon = TunedIcons.More,

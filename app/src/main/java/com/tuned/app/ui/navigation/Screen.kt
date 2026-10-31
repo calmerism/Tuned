@@ -20,6 +20,7 @@ sealed class Screen(val route: String) {
     data object Discover : Screen("discover")
     data object Genres : Screen("genres")
     data object History : Screen("history")
+    data object Recap : Screen("recap")
     data object Search : Screen("search")
     data object Settings : Screen("settings")
     /** Settings opened on the YouTube account row (from You's account pill). */
@@ -64,6 +65,9 @@ sealed class Screen(val route: String) {
             val encBrowseId = if (!browseId.isNullOrBlank()) encodeArg(browseId) else ""
             return "album_detail/$encTitle?artistName=$encArtist&browseId=$encBrowseId"
         }
+    }
+    data object LocalAlbum : Screen("local_album/{albumKey}") {
+        fun createRoute(albumKey: String) = "local_album/${encodeArg(albumKey)}"
     }
     data object FriendProfile : Screen("friend_profile/{username}?displayName={displayName}&avatarUrl={avatarUrl}") {
         fun createRoute(username: String, displayName: String? = null, avatarUrl: String? = null): String {

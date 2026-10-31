@@ -771,8 +771,11 @@ internal fun NowPlayingArtworkStage(
         val musicVideo = LocalMusicVideo.current
         val shownSleeveAlpha = sleeveAlpha * (1f - (musicVideo?.cover ?: 0f))
         if (shownSleeveAlpha > 0.001f) {
+            val playerMorphing = LocalPlayerVisibilityScope.current?.transition?.isRunning == true
             val artworkPlayingScale by animateFloatAsState(
-                targetValue = if (state.isPlaying) 1.0f else 0.94f,
+                // Full size while the player opens or closes: the morph travels to the cover's
+                // real bounds, so a paused cover at 94% jumped at both ends of it.
+                targetValue = if (state.isPlaying || playerMorphing) 1.0f else 0.94f,
                 animationSpec = spring(
                     dampingRatio = Spring.DampingRatioNoBouncy,
                     stiffness = Spring.StiffnessMediumLow,
@@ -816,11 +819,9 @@ internal fun NowPlayingArtworkStage(
             }
         }
 
-        if (musicVideo?.enabled == true) {
+        musicVideo?.session?.let { session ->
             MusicVideoStage(
-                track = track,
-                musicPlayer = player,
-                onAvailable = musicVideo.onAvailable,
+                session = session,
                 onFullscreen = musicVideo.onFullscreen,
                 modifier = Modifier.fillMaxSize(),
             )
@@ -933,17 +934,9 @@ internal fun NowPlayingTrackInfo(
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Text(
-                track.title,
-                style = MaterialTheme.typography.headlineSmall.copy(
-                    letterSpacing = (-0.35).sp,
-                    fontWeight = FontWeight.ExtraBold,
-                    // Drop the font's spacing under the title so the artist sits close.
-                    lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.LastLineBottom),
-                ),
-                color = Color.White,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            // The explicit chip rides in the marquee, right after the title's last word.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier
                     .fillMaxWidth()
                     // Tapping the title opens the song's album.
@@ -954,7 +947,27 @@ internal fun NowPlayingTrackInfo(
                     )
                     .marqueeEdgeFade(20.dp)
                     .basicMarquee(iterations = Int.MAX_VALUE),
-            )
+            ) {
+                Text(
+                    track.title,
+                    style = MaterialTheme.typography.headlineSmall.copy(
+                        letterSpacing = (-0.35).sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        // Drop the font's spacing under the title so the artist sits close.
+                        lineHeightStyle = LineHeightStyle(LineHeightStyle.Alignment.Center, LineHeightStyle.Trim.LastLineBottom),
+                    ),
+                    color = Color.White,
+                    maxLines = 1,
+                    softWrap = false,
+                )
+                if (track.explicit) {
+                    Spacer(Modifier.width(com.tuned.app.ui.theme.Space.sm))
+                    com.tuned.app.ui.common.ExplicitTag(
+                        color = Color.White.copy(alpha = 0.72f),
+                        fontSize = com.tuned.app.ui.theme.ExplicitMark.textLarge,
+                    )
+                }
+            }
             val splitArtists = remember(track.artist) {
                 com.tuned.app.util.ArtistHelper.splitArtists(track.artist)
             }
@@ -1096,7 +1109,7 @@ internal fun rememberPinnedCover(track: PlayableTrack, artworkViewModel: Artwork
     val embedded = track.artworkUrl
     val local = embedded?.startsWith("file://") == true
     val known = artworkViewModel.resolved.value[key]
-    val initial = if (local || known != null) ArtworkNormalizer.coverFor(embedded, known) else null
+    val initial = if (local || known != null || ArtworkNormalizer.isYouTubeMusicCover(embedded)) ArtworkNormalizer.coverFor(embedded, known) else null
     // Keyed on the track: a new track starts from its own choice, never the last one's.
     var pinned by remember(key, embedded) { mutableStateOf(initial) }
     LaunchedEffect(key, embedded) {
@@ -1132,11 +1145,28 @@ internal fun rememberPlayerAmbient(track: PlayableTrack): PlayerAmbient {
     // default to the cover's colour a moment (up to 1-2s) after opening.
     val ambientKey = ambientKeyOf(track)
     val known = remember(ambientKey) { synchronized(ambientCache) { ambientCache[ambientKey] } }
-    var ambientPrimary by remember(ambientKey) { mutableStateOf(known?.primary) }
-    var ambientSecondary by remember(ambientKey) { mutableStateOf(known?.companion) }
-    var ambientTertiary by remember(ambientKey) { mutableStateOf(known?.deep) }
-    LaunchedEffect(resolvedAmbientUrl) {
-        val url = resolvedAmbientUrl?.takeIf { it.isNotBlank() } ?: return@LaunchedEffect
+    // Not keyed to the track: the old colours hold until the new ones are found, so a song
+    // change crossfades cover to cover instead of dipping through the default accent.
+    var ambientPrimary by remember { mutableStateOf(known?.primary) }
+    var ambientSecondary by remember { mutableStateOf(known?.companion) }
+    var ambientTertiary by remember { mutableStateOf(known?.deep) }
+    // Keyed to the track too: songs on one album share a cover URL, and a new song must still
+    // get its colours without the player being reopened.
+    LaunchedEffect(ambientKey, resolvedAmbientUrl) {
+        known?.let {
+            ambientPrimary = it.primary
+            ambientSecondary = it.companion
+            ambientTertiary = it.deep
+        }
+        val url = resolvedAmbientUrl?.takeIf { it.isNotBlank() }
+        if (url == null) {
+            if (known == null) {
+                ambientPrimary = null
+                ambientSecondary = null
+                ambientTertiary = null
+            }
+            return@LaunchedEffect
+        }
         withContext(Dispatchers.IO) {
             runCatching {
                 val request = ImageRequest.Builder(context)

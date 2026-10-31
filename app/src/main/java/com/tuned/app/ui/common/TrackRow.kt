@@ -80,6 +80,7 @@ fun TrackRow(
     index: Int? = null,
     playback: PlaybackMark = PlaybackMark.None,
     isDownloaded: Boolean = false,
+    explicit: Boolean = false,
     isAvailable: Boolean = true,
     isSelected: Boolean = false,
     density: TrackRowDensity = TrackRowDensity.Default,
@@ -167,6 +168,10 @@ fun TrackRow(
                 if (isDownloaded) {
                     Icon(Icons.Filled.DownloadDone, contentDescription = null, tint = colors.text2, modifier = Modifier.size(Sizes.iconInline))
                     Spacer(Modifier.width(Space.xs))
+                }
+                if (explicit) {
+                    ExplicitTag(color = if (isAvailable) colors.text2 else colors.text3)
+                    Spacer(Modifier.width(Space.xs + Space.xxs))
                 }
                 Text(
                     subtitle,

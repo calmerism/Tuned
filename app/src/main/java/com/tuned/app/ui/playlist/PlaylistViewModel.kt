@@ -80,8 +80,26 @@ class PlaylistViewModel @Inject constructor(
     private val innerTubeApi: com.tuned.app.data.music.InnerTubeMusicApi,
     private val routeNavigator: com.tuned.app.ui.navigation.AppRouteNavigator,
     private val localMusicLibrary: com.tuned.app.data.localmusic.LocalMusicLibrary,
+    private val pinsStore: com.tuned.app.data.library.PinsStore,
+    favoriteArtistsStore: com.tuned.app.data.library.FavoriteArtistsStore,
     @dagger.hilt.android.qualifiers.ApplicationContext private val context: android.content.Context,
 ) : ViewModel() {
+
+    val pins = pinsStore.pins
+    val favoriteArtists = favoriteArtistsStore.artists
+    fun unpin(item: com.tuned.app.data.library.PinnedItem) { pinsStore.toggle(item) }
+
+    fun openAlbumPin(pin: com.tuned.app.data.library.PinnedItem) {
+        routeNavigator.navigateTo(com.tuned.app.ui.navigation.Screen.AlbumDetail.createRoute(pin.title, pin.artist, pin.browseId))
+    }
+
+    fun openArtistPin(pin: com.tuned.app.data.library.PinnedItem) {
+        routeNavigator.navigateTo(com.tuned.app.ui.navigation.Screen.ArtistDetail.createRoute(pin.title, pin.browseId))
+    }
+
+    fun openFavouriteArtist(name: String, browseId: String) {
+        routeNavigator.navigateTo(com.tuned.app.ui.navigation.Screen.ArtistDetail.createRoute(name, browseId.takeIf(String::isNotBlank)))
+    }
 
     private val _uiState = MutableStateFlow(PlaylistUiState())
     val uiState: StateFlow<PlaylistUiState> = _uiState.asStateFlow()
@@ -328,10 +346,11 @@ class PlaylistViewModel @Inject constructor(
     /** Playlist Playground: a list of songs from an idea in words. */
     suspend fun createFromIdea(idea: String): List<GeneratedTrack> = generateRepository.generateFromIdea(idea)
 
-    fun savePlayground(idea: String, tracks: List<GeneratedTrack>, subtitle: String) {
+    fun savePlayground(idea: String, tracks: List<GeneratedTrack>, subtitle: String, onSaved: (Long) -> Unit = {}) {
         viewModelScope.launch {
             val saved = runCatching { playlistRepository.save(idea, subtitle, "custom", tracks) }.getOrNull()
             load(justGeneratedId = saved?.id)
+            saved?.let { onSaved(it.id) }
         }
     }
 

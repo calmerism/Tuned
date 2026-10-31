@@ -322,6 +322,7 @@ private fun PlaylistContent(
                 onClick = { onPlay(index) },
                 onLongClick = { trayIndex = index },
                 onMore = { menuTrack = track },
+                explicit = track.explicit,
             )
         }
 

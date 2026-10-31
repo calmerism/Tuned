@@ -609,6 +609,7 @@ class FeedViewModel @Inject constructor(
         artworkUrl = artworkUrl,
         videoId = videoId.takeIf(String::isNotBlank),
         durationMs = durationSeconds?.takeIf { it > 0 }?.times(1_000L),
+        explicit = explicit,
     )
 
     private companion object {

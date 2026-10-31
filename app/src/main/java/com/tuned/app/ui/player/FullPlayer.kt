@@ -366,18 +366,22 @@ internal fun FullPlayer(
     var showTrackMenu by remember(track.videoId, track.title) { mutableStateOf(false) }
     // Music video in place of the artwork ("Watch video"), and its full-screen view.
     val musicVideoOn by MusicVideoMode.on.collectAsStateWithLifecycle()
-    // Set by the video stage itself on every frame (see MusicVideoStage).
-    var musicVideoShowing by remember { mutableStateOf(false) }
     var musicVideoFullscreen by remember { mutableStateOf(false) }
+    // Held here, above the tabs: lyrics and the queue leave the video running, so coming back
+    // shows it at once, and the page stays dimmed on every tab while it plays.
+    val musicVideoSession = if (musicVideoEnabled && musicVideoOn && !musicVideoFullscreen) {
+        rememberMusicVideoSession(track, player)
+    } else {
+        null
+    }
     val musicVideoCover by animateFloatAsState(
-        targetValue = if (musicVideoEnabled && musicVideoOn && musicVideoShowing && !musicVideoFullscreen && currentTab == FullPlayerTab.NOW_PLAYING) 1f else 0f,
+        targetValue = if (musicVideoSession?.showing == true) 1f else 0f,
         animationSpec = tween(350),
         label = "musicVideoCover",
     )
     val musicVideoUi = MusicVideoUi(
-        enabled = musicVideoEnabled && musicVideoOn && !musicVideoFullscreen && currentTab == FullPlayerTab.NOW_PLAYING,
+        session = musicVideoSession,
         cover = musicVideoCover,
-        onAvailable = { musicVideoShowing = it },
         onFullscreen = { musicVideoFullscreen = true },
     )
     var showSignalPath by remember { mutableStateOf(false) }

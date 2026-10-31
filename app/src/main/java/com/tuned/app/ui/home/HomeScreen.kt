@@ -186,6 +186,7 @@ fun HomeScreen(
     onOpenFriends: () -> Unit,
     onOpenDownloads: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
+    onOpenRecap: () -> Unit = {},
     onOpenYouTubeAccount: () -> Unit = {},
     viewModel: HomeViewModel = hiltViewModel(),
     artistAlbumNavigator: com.tuned.app.ui.navigation.ArtistAlbumNavigator = hiltViewModel<ArtistAlbumNavBridgeHome>().navigator,
@@ -317,6 +318,14 @@ fun HomeScreen(
                                     headlineLabel = if (uiState.isLocalStatsMode && !uiState.isViewingFriend) "Plays" else "Scrobbles",
                                     onOpenGenres = onOpenGenres,
                                     modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 16.dp),
+                                )
+                            }
+                        }
+                        if (!uiState.isViewingFriend) {
+                            item(key = "recap", contentType = "recap") {
+                                com.tuned.app.ui.recap.RecapEntryTile(
+                                    onClick = onOpenRecap,
+                                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 8.dp),
                                 )
                             }
                         }

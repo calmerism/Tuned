@@ -147,7 +147,7 @@ private fun PodcastsContent(
                 trailingIcon = {
                     if (state.query.isNotEmpty()) {
                         IconButton(onClick = onClearQuery) {
-                            Icon(Icons.Filled.SearchOff, contentDescription = null)
+                            Icon(Icons.Filled.SearchOff, contentDescription = stringResource(R.string.common_clear_search))
                         }
                     }
                 },

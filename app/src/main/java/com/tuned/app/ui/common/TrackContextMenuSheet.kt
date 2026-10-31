@@ -37,6 +37,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.PushPin
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.ArrowForwardIos
 import androidx.compose.material.icons.filled.Add
@@ -139,6 +140,16 @@ class ArtistAlbumMenuViewModel @Inject constructor(
     fun openAlbum(title: String, artist: String = "", browseId: String? = null) {
         navigator.openAlbum(title, artist, browseId)
     }
+}
+
+/** Lets the menus pin things to Library. */
+@HiltViewModel
+class PinsViewModel @Inject constructor(
+    private val store: com.tuned.app.data.library.PinsStore,
+) : ViewModel() {
+    val pins = store.pins
+    fun isPinned(item: com.tuned.app.data.library.PinnedItem) = store.isPinned(item)
+    fun toggle(item: com.tuned.app.data.library.PinnedItem) = store.toggle(item)
 }
 
 /** Thin bridge so TrackContextMenuSheet can reach the MixLauncher singleton
@@ -319,6 +330,7 @@ fun TrackContextMenuSheet(
     onRemoveFromQueue: (() -> Unit)? = null,
     genreResolverViewModel: GenreRowViewModel = hiltViewModel(),
     startMixViewModel: StartMixMenuViewModel = hiltViewModel(),
+    pinsViewModel: PinsViewModel = hiltViewModel(),
     exploreGenreViewModel: ExploreGenreMenuViewModel = hiltViewModel(),
     downloadViewModel: DownloadMenuViewModel = hiltViewModel(),
     exclusionViewModel: RecommendationExclusionMenuViewModel = hiltViewModel(),
@@ -602,6 +614,26 @@ fun TrackContextMenuSheet(
                             // About this song
                             MenuGroup(
                                 buildList {
+                                    if (playableTrack != null) {
+                                        val pin = com.tuned.app.data.library.PinnedItem(
+                                            kind = com.tuned.app.data.library.PinKind.SONG,
+                                            title = playableTrack.title,
+                                            artist = playableTrack.artist,
+                                            artworkUrl = playableTrack.artworkUrl,
+                                            videoId = playableTrack.videoId,
+                                        )
+                                        add { pos ->
+                                            MenuActionRow(
+                                                Icons.Filled.PushPin,
+                                                stringResource(if (pinsViewModel.isPinned(pin)) R.string.pin_remove else R.string.pin_add),
+                                                position = pos,
+                                            ) {
+                                                val now = pinsViewModel.toggle(pin)
+                                                notify(context.getString(if (now) R.string.pin_added else R.string.pin_removed))
+                                                onDismiss()
+                                            }
+                                        }
+                                    }
                                     add { pos ->
                                         MenuActionRow(Icons.Filled.Info, stringResource(R.string.menu_details_specs), position = pos, chevron = true) {
                                             showDetailsSheet = true

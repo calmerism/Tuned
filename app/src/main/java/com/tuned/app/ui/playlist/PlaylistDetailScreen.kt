@@ -126,6 +126,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -207,11 +208,14 @@ internal object PlaylistSortMemory {
 }
 
 @OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.ExperimentalFoundationApi::class)
+private val emptyTrackFolders = kotlinx.coroutines.flow.MutableStateFlow<Map<String, String>>(emptyMap())
+
 @Composable
 fun PlaylistDetailScreen(
     playlistId: Long,
     onBack: () -> Unit,
     onOpenPlaylist: ((Long) -> Unit)? = null,
+    onOpenLocalAlbum: (String) -> Unit = {},
     viewModel: PlaylistViewModel = hiltViewModel(),
 ) {
     val state by viewModel.uiState.collectAsStateWithLifecycle()
@@ -272,24 +276,34 @@ fun PlaylistDetailScreen(
     var searchQuery by remember { mutableStateOf("") }
     var isSearchActive by remember { mutableStateOf(false) }
 
-    val displayTracks = remember(playlist.tracks, currentSort, sortAscending, searchQuery) {
+    // Local songs can be narrowed to one of the folders they came from.
+    var selectedFolder by rememberSaveable(playlist.id) { mutableStateOf<String?>(null) }
+    val trackFolders by (if (playlist.mode == LOCAL_SONGS_MODE) hiltViewModel<LocalSongsViewModel>().trackFolders else emptyTrackFolders)
+        .collectAsStateWithLifecycle()
+    val folderTracks = remember(playlist.tracks, selectedFolder, trackFolders) {
+        selectedFolder?.let { folder -> playlist.tracks.filter { trackFolders[it.url] == folder } } ?: playlist.tracks
+    }
+    val localAlbumList = remember(folderTracks, playlist.mode) {
+        if (playlist.mode == LOCAL_SONGS_MODE) localAlbums(folderTracks) else emptyList()
+    }
+    val displayTracks = remember(folderTracks, currentSort, sortAscending, searchQuery) {
         val sorted = when (currentSort) {
-            PlaylistTrackSort.CUSTOM -> if (sortAscending) playlist.tracks else playlist.tracks.reversed()
-            PlaylistTrackSort.DATE_ADDED -> if (sortAscending) playlist.tracks else playlist.tracks.reversed()
+            PlaylistTrackSort.CUSTOM -> if (sortAscending) folderTracks else folderTracks.reversed()
+            PlaylistTrackSort.DATE_ADDED -> if (sortAscending) folderTracks else folderTracks.reversed()
             PlaylistTrackSort.NAME -> if (sortAscending) {
-                playlist.tracks.sortedBy { it.name.lowercase() }
+                folderTracks.sortedBy { it.name.lowercase() }
             } else {
-                playlist.tracks.sortedByDescending { it.name.lowercase() }
+                folderTracks.sortedByDescending { it.name.lowercase() }
             }
             PlaylistTrackSort.ARTIST -> if (sortAscending) {
-                playlist.tracks.sortedBy { it.artist.lowercase() }
+                folderTracks.sortedBy { it.artist.lowercase() }
             } else {
-                playlist.tracks.sortedByDescending { it.artist.lowercase() }
+                folderTracks.sortedByDescending { it.artist.lowercase() }
             }
             PlaylistTrackSort.PLAY_TIME -> if (sortAscending) {
-                playlist.tracks.sortedBy { it.playcount ?: it.listeners ?: 0L }
+                folderTracks.sortedBy { it.playcount ?: it.listeners ?: 0L }
             } else {
-                playlist.tracks.sortedByDescending { it.playcount ?: it.listeners ?: 0L }
+                folderTracks.sortedByDescending { it.playcount ?: it.listeners ?: 0L }
             }
         }
         if (searchQuery.isNotBlank()) {
@@ -316,6 +330,7 @@ fun PlaylistDetailScreen(
     // Permanent reorder only makes sense on the stored order: Custom (ascending)
     // on a local playlist with the lock opened.
     val reorderEnabled = !isReorderLocked &&
+        selectedFolder == null &&
         !playlist.isYouTubeOnly &&
         currentSort == PlaylistTrackSort.CUSTOM &&
         sortAscending
@@ -485,8 +500,14 @@ fun PlaylistDetailScreen(
                     if (playlist.mode == LOCAL_SONGS_MODE) {
                         Spacer(Modifier.height(14.dp))
                         LocalSongsPanel(trackCount = playlist.tracks.size)
+                        Spacer(Modifier.height(12.dp))
+                        LocalFolderChips(selected = selectedFolder, onSelect = { selectedFolder = it })
                     }
-
+                }
+                if (playlist.mode == LOCAL_SONGS_MODE) {
+                    LocalAlbumsShelf(localAlbumList, onOpen = { onOpenLocalAlbum(it.key) })
+                }
+                Column(Modifier.fillMaxWidth().padding(horizontal = Keyline.detail)) {
                     Spacer(Modifier.height(18.dp))
 
                     // Sort Filter Pill & Lock Icon Row (Custom order, Date added, Name, Artist, Play time)

@@ -97,6 +97,7 @@ fun TunedTheme(
             modifier = Modifier.fillMaxSize(),
             color = MaterialTheme.colorScheme.background,
         ) {
+            SideEffect { AppType.useTunedFont = themeState.useCustomFont }
             CompositionLocalProvider(
                 LocalLiquidGlass provides themeState.liquidGlass,
                 LocalMd3NavBar provides themeState.md3NavBar,

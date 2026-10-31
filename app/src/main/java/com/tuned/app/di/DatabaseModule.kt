@@ -290,6 +290,26 @@ object DatabaseModule {
         }
     }
 
+    /**
+     * Per-year listening for the recap. Until now only all-time totals were kept, so each
+     * song's total goes to the year it was last played: the closest answer there is.
+     */
+    private val migration15To16 = object : androidx.room.migration.Migration(15, 16) {
+        override fun migrate(db: androidx.sqlite.db.SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `yearly_listens` (`year` INTEGER NOT NULL, `trackKey` TEXT NOT NULL, " +
+                    "`title` TEXT NOT NULL, `artist` TEXT NOT NULL, `videoId` TEXT, `artworkUrl` TEXT, " +
+                    "`listenedMs` INTEGER NOT NULL, `plays` INTEGER NOT NULL, PRIMARY KEY(`year`, `trackKey`))",
+    )
+            db.execSQL(
+                "INSERT OR IGNORE INTO yearly_listens (year, trackKey, title, artist, videoId, artworkUrl, listenedMs, plays) " +
+                    "SELECT CAST(strftime('%Y', lastPlayedAtMillis / 1000, 'unixepoch') AS INTEGER), trackKey, title, artist, " +
+                    "videoId, artworkUrl, totalPlayTimeMs, playCount FROM song_play_stats " +
+                    "WHERE lastPlayedAtMillis > 0 AND totalPlayTimeMs > 0",
+    )
+        }
+    }
+
     private val migration14To15 = object : Migration(14, 15) {
         override fun migrate(database: androidx.sqlite.db.SupportSQLiteDatabase) {
             database.execSQL(
@@ -335,6 +355,7 @@ object DatabaseModule {
                 migration12To13,
                 migration13To14,
                 migration14To15,
+                migration15To16,
             )
             .build()
 
@@ -360,6 +381,11 @@ object DatabaseModule {
     @Singleton
     fun provideSongPlayStatsDao(database: AppDatabase): com.tuned.app.data.local.db.SongPlayStatsDao =
         database.songPlayStatsDao()
+
+    @Provides
+    @Singleton
+    fun provideYearlyListenDao(database: AppDatabase): com.tuned.app.data.local.db.YearlyListenDao =
+        database.yearlyListenDao()
 
     @Provides
     @Singleton

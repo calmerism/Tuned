@@ -46,8 +46,10 @@ data class HomeStats(
     val artistCount: Long,
     val albumCount: Long,
     val avatarUrl: String? = null,
+    /** Real listening time when it's known; otherwise it's estimated from the scrobble count. */
+    val listenedSeconds: Long? = null,
 ) {
-    val timerBaseSeconds: Long get() = scrobbles * AVG_TRACK_SECONDS
+    val timerBaseSeconds: Long get() = listenedSeconds ?: scrobbles * AVG_TRACK_SECONDS
 }
 
 data class RecentTracksPage(

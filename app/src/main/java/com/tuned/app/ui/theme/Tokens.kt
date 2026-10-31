@@ -6,6 +6,7 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 /**
  * Layout tokens for Tuned. Every spacing, size and corner radius in UI code
@@ -199,6 +200,12 @@ object Radius {
     val xl: Dp = 28.dp
     /** Tuned's original floating dock. */
     val dock: Dp = 32.dp
+}
+
+/** The explicit "E" chip: small beside rows, larger beside a page title. */
+object ExplicitMark {
+    val text = 9.5.sp
+    val textLarge = 11.sp
 }
 
 /** Shapes built from [Radius]. */

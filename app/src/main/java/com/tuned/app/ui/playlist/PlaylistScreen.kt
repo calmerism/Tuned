@@ -90,6 +90,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import com.tuned.app.R
+import com.tuned.app.data.library.PinKind
+import com.tuned.app.ui.common.MediaTile
+import com.tuned.app.ui.common.MediaTileShape
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -156,32 +159,29 @@ fun PlaylistScreen(
     var selectedPlaylists by remember { mutableStateOf(setOf<Long>()) }
     var showMultipleDeleteConfirm by remember { mutableStateOf(false) }
     var showPlayground by remember { mutableStateOf(false) }
+    val pins by viewModel.pins.collectAsStateWithLifecycle()
+    val favoriteArtists by viewModel.favoriteArtists.collectAsStateWithLifecycle()
+    val pinsTitle = stringResource(R.string.pins_title)
+    var pinToRemove by remember { mutableStateOf<com.tuned.app.data.library.PinnedItem?>(null) }
+    pinToRemove?.let { pin ->
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { pinToRemove = null },
+            title = { Text(pin.title) },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { viewModel.unpin(pin); pinToRemove = null }) {
+                    Text(stringResource(R.string.pin_remove))
+                }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { pinToRemove = null }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
 
     if (showPlayground) {
-        val playgroundSubtitle = stringResource(R.string.playground_title)
-        PlaylistPlaygroundSheet(
-            create = viewModel::createFromIdea,
-            onPlay = { tracks ->
-                showPlayground = false
-                musicPlayer.playQueue(
-                    tracks.map { track ->
-                        com.tuned.app.playback.PlayableTrack(
-                            title = track.name,
-                            artist = track.artist,
-                            album = track.album,
-                            artworkUrl = track.artworkUrl,
-                            videoId = Regex("v=([A-Za-z0-9_-]{11})").find(track.url)?.groupValues?.get(1),
-                        )
-                    },
-                    sourceLabel = playgroundSubtitle,
-                )
-            },
-            onSave = { idea, tracks ->
-                showPlayground = false
-                viewModel.savePlayground(idea, tracks, playgroundSubtitle)
-            },
-            onDismiss = { showPlayground = false },
-        )
+        PlaygroundHost(viewModel, onDismiss = { showPlayground = false })
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
@@ -252,6 +252,56 @@ fun PlaylistScreen(
                                     LibraryCreateTile(Icons.Filled.Add, stringResource(R.string.pl_new_playlist), viewModel::openCreateDialog, Modifier.weight(1f))
                                     LibraryCreateTile(Icons.Filled.AutoAwesome, stringResource(R.string.playground_tile), { showPlayground = true }, Modifier.weight(1f))
                                     LibraryCreateTile(Icons.AutoMirrored.Filled.PlaylistAdd, stringResource(R.string.pl_new_mix), onOpenGenerator, Modifier.weight(1f))
+                                }
+                            }
+                        }
+
+                        if (selectedPlaylists.isEmpty()) {
+                            if (pins.isNotEmpty()) {
+                                item(key = "pins", contentType = "pins") {
+                                    LibraryShelf(stringResource(R.string.pins_title)) {
+                                        items(pins, key = { it.key }) { pin ->
+                                            MediaTile(
+                                                title = pin.title,
+                                                subtitle = pin.artist.takeIf(String::isNotBlank),
+                                                artworkUrl = pin.artworkUrl,
+                                                artistName = pin.title.takeIf { pin.kind == PinKind.ARTIST },
+                                                shape = if (pin.kind == PinKind.ARTIST) MediaTileShape.Circle else MediaTileShape.Square,
+                                                onClick = {
+                                                    when (pin.kind) {
+                                                        PinKind.SONG -> musicPlayer.play(
+                                                            com.tuned.app.playback.PlayableTrack(
+                                                                title = pin.title,
+                                                                artist = pin.artist,
+                                                                artworkUrl = pin.artworkUrl,
+                                                                videoId = pin.videoId,
+                                                            ),
+                                                            sourceLabel = pinsTitle,
+                                                            startRadio = true,
+                                                        )
+                                                        PinKind.ALBUM -> viewModel.openAlbumPin(pin)
+                                                        PinKind.ARTIST -> viewModel.openArtistPin(pin)
+                                                    }
+                                                },
+                                                onLongClick = { pinToRemove = pin },
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                            if (favoriteArtists.isNotEmpty()) {
+                                item(key = "favouriteArtists", contentType = "pins") {
+                                    LibraryShelf(stringResource(R.string.favourite_artists_title)) {
+                                        items(favoriteArtists, key = { it.name }) { artist ->
+                                            MediaTile(
+                                                title = artist.name,
+                                                artworkUrl = artist.artworkUrl,
+                                                artistName = artist.name,
+                                                shape = MediaTileShape.Circle,
+                                                onClick = { viewModel.openFavouriteArtist(artist.name, artist.browseId) },
+                                            )
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -907,5 +957,22 @@ private fun LibraryCreateTile(
             Spacer(Modifier.height(4.dp))
             Text(label, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
+    }
+}
+
+/** A titled row of tiles at the top of Library, for pins and favourite artists. */
+@Composable
+private fun LibraryShelf(title: String, content: androidx.compose.foundation.lazy.LazyListScope.() -> Unit) {
+    Column(Modifier.fillMaxWidth().padding(bottom = 20.dp)) {
+        Text(
+            title,
+            style = com.tuned.app.ui.theme.AppType.titleL,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.padding(bottom = 12.dp),
+        )
+        androidx.compose.foundation.lazy.LazyRow(
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            content = content,
+        )
     }
 }

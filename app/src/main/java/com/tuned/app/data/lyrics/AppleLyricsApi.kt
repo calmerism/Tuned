@@ -324,7 +324,7 @@ class AppleLyricsApi @Inject constructor(
 
     companion object {
         // The lyrics backend is run by the upstream project and identifies clients by this.
-        private const val USER_AGENT = "LastWave-Android/1.0"
+        private const val USER_AGENT = "Tuned-Android/1.0"
         private const val DURATION_TOLERANCE_MS = 6_000L
         private const val MIN_MATCH_SCORE = 3
     }

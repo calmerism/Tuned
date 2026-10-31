@@ -39,6 +39,9 @@ import javax.inject.Inject
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     @Inject
+    lateinit var musicPlayerForCast: dagger.Lazy<com.tuned.app.playback.MusicPlayer>
+
+    @Inject
     lateinit var lastFmAuthCallback: LastFmAuthCallbackCoordinator
 
     @Inject
@@ -313,6 +316,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         if (isDownloadsTarget) {
             runCatching { appRouteNavigator.get().navigateTo(Screen.Downloads.route) }
         }
+    }
+
+    override fun dispatchKeyEvent(event: android.view.KeyEvent): Boolean {
+        // In the app's foreground the volume keys would otherwise only move the phone's volume.
+        if (event.action == android.view.KeyEvent.ACTION_DOWN) {
+            val up = event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_UP
+            val down = event.keyCode == android.view.KeyEvent.KEYCODE_VOLUME_DOWN
+            if ((up || down) && runCatching { musicPlayerForCast.get().stepCastVolume(up) }.getOrDefault(false)) return true
+        }
+        return super.dispatchKeyEvent(event)
     }
 
     override fun onNewIntent(intent: Intent) {

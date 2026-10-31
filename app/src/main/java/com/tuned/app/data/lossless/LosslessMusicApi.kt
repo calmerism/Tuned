@@ -138,7 +138,7 @@ class LosslessMusicApi @Inject constructor(
          * Consecutive backend misses before the chain is treated as down and
          * every resolve falls through to YouTube directly.
          */
-        private const val FAILURE_COOLDOWN_THRESHOLD = 2
+        private const val FAILURE_COOLDOWN_THRESHOLD = 3
 
         /** How long a backed-off backend stays out of the resolve path. */
         private const val FAILURE_COOLDOWN_MS = 30_000L
@@ -702,7 +702,7 @@ class LosslessMusicApi @Inject constructor(
                 )
             }
 
-            noteBackendFailure()
+            // Not in the catalog: that says nothing about whether the backend is up.
             return@withContext null
         }
 
@@ -741,7 +741,7 @@ class LosslessMusicApi @Inject constructor(
                 )
             }
 
-            noteBackendFailure()
+            // Not in the catalog: that says nothing about whether the backend is up.
             return@withContext null
         }
 

@@ -142,6 +142,13 @@ import kotlin.math.sign
 import com.tuned.app.ui.theme.LocalIsDarkTheme
 import com.tuned.app.ui.theme.LocalLiquidGlass
 import com.tuned.app.ui.theme.LocalMd3NavBar
+import com.tuned.app.ui.theme.LocalHideNavTabs
+import androidx.compose.ui.unit.LayoutDirection
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.foundation.gestures.rememberDraggableState
+import androidx.compose.foundation.gestures.draggable
+import androidx.compose.foundation.gestures.Orientation
 import com.tuned.app.ui.theme.LiquidGlassPreset
 import com.tuned.app.ui.theme.liquidGlassChrome
 import com.tuned.app.ui.theme.liquidGlassContainerColor
@@ -236,6 +243,7 @@ fun MainShell(
     onOpenDiscover: () -> Unit,
     onOpenGenres: () -> Unit,
     onOpenHistory: () -> Unit = {},
+    onOpenRecap: () -> Unit = {},
     onOpenYouTubeAccount: () -> Unit = {},
     onOpenFriends: () -> Unit,
     onOpenFriendProfile: (username: String, displayName: String?, avatarUrl: String?) -> Unit = { _, _, _ -> },
@@ -268,6 +276,9 @@ fun MainShell(
         com.tuned.app.ui.common.UpdateSheet(mainShellViewModel.appUpdateManager) { showUpdateSheet = false }
     }
 
+    var tabDrag by remember { mutableFloatStateOf(0f) }
+    val tabSwipeDistance = with(LocalDensity.current) { TabSwipeDistance.toPx() }
+    val rtl = LocalLayoutDirection.current == LayoutDirection.Rtl
     val backgroundColor = MaterialTheme.colorScheme.background
     // Unconditional remember keeps composition stable; usage gated below.
     val navigationBackdrop = rememberLayerBackdrop {
@@ -279,8 +290,9 @@ fun MainShell(
     Box(Modifier.fillMaxSize()) {
         BackHandler(enabled = selectedTab != MainTab.HOME) { selectedTab = MainTab.HOME }
         // Fade through (plan, motion inventory #2): the old tab fades out
-        // quickly, the new one fades in and rises 8dp. No horizontal swipe
-        // between tabs, so row swipe actions never fight the pager.
+        // quickly, the new one fades in and rises 8dp. With the dock hidden, a sideways
+        // swipe changes tab; shelves and row swipe actions get the drag first, so they
+        // never fight it.
         AnimatedContent(
             targetState = selectedTab,
             transitionSpec = {
@@ -290,6 +302,16 @@ fun MainShell(
             modifier = Modifier
                 .fillMaxSize()
                 .nestedScroll(dockScroll)
+                .draggable(
+                    state = rememberDraggableState { tabDrag += it },
+                    orientation = Orientation.Horizontal,
+                    enabled = LocalHideNavTabs.current,
+                    onDragStarted = { tabDrag = 0f },
+                    onDragStopped = { velocity ->
+                        val step = tabSwipeStep(tabDrag, velocity, tabSwipeDistance, rtl)
+                        selectedTab = tabs[(selectedTab.ordinal + step).coerceIn(0, tabs.lastIndex)]
+                    },
+                )
                 .liquidGlassSource(if (navGlass) navigationBackdrop else null),
             label = "tabs",
         ) { tab ->
@@ -322,6 +344,7 @@ fun MainShell(
                         onOpenDiscover = onOpenDiscover,
                         onOpenGenres = onOpenGenres,
                         onOpenHistory = onOpenHistory,
+                        onOpenRecap = onOpenRecap,
                         onOpenYouTubeAccount = onOpenYouTubeAccount,
                         onOpenFriends = onOpenFriends,
                         onOpenDownloads = onOpenDownloads,
@@ -364,6 +387,19 @@ fun MainShell(
             onDispose { bottomNavSlot.value = {} }
         }
     }
+}
+
+private val TabSwipeDistance = 72.dp
+private const val TAB_SWIPE_VELOCITY = 800f
+
+/** Which way a finished sideways swipe moves between tabs: -1, 0 or 1. */
+internal fun tabSwipeStep(dragPx: Float, velocity: Float, distancePx: Float, rtl: Boolean): Int {
+    val forward = when {
+        dragPx <= -distancePx || velocity <= -TAB_SWIPE_VELOCITY -> 1
+        dragPx >= distancePx || velocity >= TAB_SWIPE_VELOCITY -> -1
+        else -> 0
+    }
+    return if (rtl) -forward else forward
 }
 
 @Composable

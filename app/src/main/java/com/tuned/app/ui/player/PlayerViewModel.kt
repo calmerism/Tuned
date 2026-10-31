@@ -67,6 +67,9 @@ class PlayerViewModel @Inject constructor(
         .map { map -> map.values.filter { !it.isFinished && it.error == null } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
 
+    /** A page something outside the player has asked to open, such as a shared link. */
+    val pendingAppRoute get() = routeNavigator.pendingRoute
+
     fun navigateToDownloads() {
         routeNavigator.navigateTo(com.tuned.app.ui.navigation.Screen.Downloads.route)
     }

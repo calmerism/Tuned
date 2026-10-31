@@ -1,5 +1,7 @@
 package com.tuned.app.ui.podcast
 
+import com.tuned.app.R
+import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -147,7 +149,7 @@ fun PodcastEpisodeRow(
                 }
             } else {
                 IconButton(onClick = onClick) {
-                    Icon(Icons.Filled.PlayArrow, contentDescription = null)
+                    Icon(Icons.Filled.PlayArrow, contentDescription = stringResource(R.string.common_play))
                 }
             }
         },

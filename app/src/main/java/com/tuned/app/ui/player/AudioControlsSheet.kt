@@ -1,6 +1,7 @@
 package com.tuned.app.ui.player
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -15,6 +16,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.LockOpen
@@ -44,6 +46,7 @@ import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.tuned.app.R
 import com.tuned.app.playback.MusicPlayer
 import com.tuned.app.playback.MusicPlayerState
@@ -74,6 +77,24 @@ internal fun AudioControlsSheet(
     var currentPitch by remember(state.pitch) { mutableFloatStateOf(state.pitch) }
     // Speed and pitch change the samples, so Bit-Perfect turns them off.
     val rateAvailable = state.vocalsAvailable
+
+    var showEqualizer by remember { mutableStateOf(false) }
+    var showAutoEq by remember { mutableStateOf(false) }
+    if (showAutoEq) {
+        com.tuned.app.ui.settings.autoeq.AutoEqDialog(onDismiss = { showAutoEq = false })
+    }
+    if (showEqualizer) {
+        val settings: com.tuned.app.ui.settings.SettingsViewModel = androidx.hilt.navigation.compose.hiltViewModel()
+        val eq by settings.equalizer.collectAsStateWithLifecycle()
+        com.tuned.app.ui.settings.EqualizerSheet(
+            eq = eq,
+            onDismiss = { showEqualizer = false },
+            onSetEnabled = settings::setEqualizerEnabled,
+            onPickPreset = settings::applyEqPreset,
+            onBandPreview = settings::previewEqBandGain,
+            onBandChange = settings::setEqBandGain,
+        )
+    }
 
     fun apply(speed: Float, pitch: Float) {
         currentSpeed = speed
@@ -121,16 +142,22 @@ internal fun AudioControlsSheet(
             }
 
             SheetCard {
+                val castVolume by player.castVolume.collectAsStateWithLifecycle()
                 Text(
-                    text = stringResource(R.string.audio_volume),
+                    text = stringResource(if (castVolume != null) R.string.audio_cast_volume else R.string.audio_volume),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
                 )
-                VolumeSlider(
-                    isTranslucent = false,
-                    primaryColor = MaterialTheme.colorScheme.primary,
-                    fullWidth = true,
-                )
+                val cast = castVolume
+                if (cast != null) {
+                    PlainSlider(value = cast, range = 0f..1f, enabled = true, onChange = player::setCastVolume)
+                } else {
+                    VolumeSlider(
+                        isTranslucent = false,
+                        primaryColor = MaterialTheme.colorScheme.primary,
+                        fullWidth = true,
+                    )
+                }
             }
 
             SheetCard {
@@ -211,6 +238,13 @@ internal fun AudioControlsSheet(
                         )
                     }
                 }
+            }
+
+            // The equaliser and AutoEQ run together in the audio engine: headphone correction
+            // first, your own taste on top.
+            SheetCard {
+                SheetLink(stringResource(R.string.settings_equalizer), stringResource(R.string.audio_eq_sub)) { showEqualizer = true }
+                SheetLink(stringResource(R.string.autoeq_title), stringResource(R.string.audio_autoeq_sub)) { showAutoEq = true }
             }
 
             // Apple's Music Haptics; phones with no vibrator don't get the toggle.
@@ -297,10 +331,6 @@ private fun RateSlider(
     enabled: Boolean,
     onChange: (Float) -> Unit,
 ) {
-    val trackColors = SliderDefaults.colors(
-        activeTrackColor = MaterialTheme.colorScheme.primary,
-        inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
-    )
     Column {
         Row(
             modifier = Modifier.fillMaxWidth(),
@@ -314,34 +344,64 @@ private fun RateSlider(
                 fontWeight = FontWeight.SemiBold,
             )
         }
-        Slider(
-            value = value,
-            onValueChange = { onChange(snapRate(it)) },
-            enabled = enabled,
-            valueRange = MIN_RATE..MAX_RATE,
-            colors = trackColors,
-            thumb = {
-                Box(
-                    Modifier
-                        .size(18.dp)
-                        .background(
-                            if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
-                            CircleShape,
-                        ),
-                )
-            },
-            track = { sliderState ->
-                SliderDefaults.Track(
-                    sliderState = sliderState,
-                    modifier = Modifier.height(6.dp),
-                    enabled = enabled,
-                    colors = trackColors,
-                    thumbTrackGapSize = 0.dp,
-                    trackInsideCornerSize = 3.dp,
-                    drawStopIndicator = null,
-                )
-            },
-            modifier = Modifier.fillMaxWidth(),
-        )
+        PlainSlider(value = value, range = MIN_RATE..MAX_RATE, enabled = enabled, onChange = { onChange(snapRate(it)) })
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun PlainSlider(
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    enabled: Boolean,
+    onChange: (Float) -> Unit,
+) {
+    val trackColors = SliderDefaults.colors(
+        activeTrackColor = MaterialTheme.colorScheme.primary,
+        inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+    )
+    Slider(
+        value = value,
+        onValueChange = onChange,
+        enabled = enabled,
+        valueRange = range,
+        colors = trackColors,
+        thumb = {
+            Box(
+                Modifier
+                    .size(18.dp)
+                    .background(
+                        if (enabled) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+                        CircleShape,
+                    ),
+            )
+        },
+        track = { sliderState ->
+            SliderDefaults.Track(
+                sliderState = sliderState,
+                modifier = Modifier.height(6.dp),
+                enabled = enabled,
+                colors = trackColors,
+                thumbTrackGapSize = 0.dp,
+                trackInsideCornerSize = 3.dp,
+                drawStopIndicator = null,
+            )
+        },
+        modifier = Modifier.fillMaxWidth(),
+    )
+}
+
+/** A row that opens another screen, in the Settings list style. */
+@Composable
+private fun SheetLink(title: String, subtitle: String, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onClick),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
+            Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
     }
 }

@@ -345,9 +345,6 @@
     <string name="settings_search_title">Cerca nelle impostazioni</string>
     <!-- Local songs -->
     <string name="local_add_to_playlist">Aggiungi a una playlist</string>
-    <string name="local_panel_title">Brani di questo dispositivo</string>
-    <string name="local_panel_hint">Scegli una cartella: ogni file MP3, FLAC, WAV, OGG/Opus, M4A/ALAC o AAC al suo interno (sottocartelle incluse) viene copiato nell\'app con tag, copertina e testi .lrc.</string>
-    <string name="local_no_folder">Nessuna cartella scelta.</string>
     <string name="local_forget_folder">Dimentica questa cartella (i brani copiati restano)</string>
     <string name="local_choose_folder">Scegli una cartella</string>
     <string name="local_rescan">Nuova scansione</string>
@@ -359,7 +356,6 @@
         <item quantity="one">%1$d file ignorato (formato non supportato: %2$s)</item>
         <item quantity="other">%1$d file ignorati (formato non supportato: %2$s)</item>
     </plurals>
-    <string name="local_storage_used">Spazio usato dai brani locali: %1$s</string>
     <!-- Fork: internal direct output (mixer bypass without a USB DAC) -->
     <string name="signal_label_internal">Uscita diretta interna</string>
     <string name="signal_detail_internal_resampled">Uscita fissata a %2$d Hz\n%1$d Hz ricampionato nell\'app (libsoxr)</string>
@@ -1240,5 +1236,40 @@
     <string name="update_allow">Consenti a Tuned di installare gli aggiornamenti, poi torna e tocca Installa.</string>
     <string name="update_checking">Controllo…</string>
     <string name="update_new">È uscita la versione %1$s</string>
+    <string name="alb_version_missing">Questa versione non è su YouTube Music</string>
+    <string name="audio_cast_volume">Volume Cast</string>
+    <string name="local_all_folders">Tutte le cartelle</string>
+    <string name="pin_add">Fissa nella libreria</string>
+    <string name="pin_remove">Rimuovi</string>
+    <string name="pin_added">Fissato nella libreria</string>
+    <string name="pin_removed">Rimosso</string>
+    <string name="pins_title">Fissati</string>
+    <string name="favourite_artists_title">Artisti preferiti</string>
+    <string name="audio_eq_sub">Modella il suono su 15 frequenze</string>
+    <string name="audio_autoeq_sub">Corregge le cuffie per un suono neutro</string>
+    <string name="recap_title">%1$d in musica</string>
+    <string name="recap_share">Condividi</string>
+    <string name="recap_minutes_label">Minuti ascoltati</string>
+    <string name="recap_top_songs">Brani top</string>
+    <string name="recap_top_artists">Artisti top</string>
+    <string name="recap_empty">Ancora niente quest\'anno. Riproduci qualcosa e apparirà qui.</string>
+    <string name="settings_label_general">Generali</string>
+    <string name="settings_label_accounts">Account</string>
+    <string name="settings_label_listen_together">Ascolta insieme</string>
+    <string name="settings_label_app">App</string>
+    <string name="settings_label_output">Uscita e volume</string>
+    <string name="settings_label_liked">Brani preferiti</string>
+    <string name="settings_label_spotify">Spotify</string>
+    <string name="settings_label_advanced">Avanzate</string>
+    <string name="settings_label_scrobbling">Scrobbling</string>
+    <string name="settings_label_home">Home</string>
+    <string name="settings_label_presets">Preset</string>
+    <string name="common_back">Indietro</string>
+    <string name="common_more">Altre opzioni</string>
+    <string name="common_play">Riproduci</string>
+    <string name="common_clear_search">Cancella ricerca</string>
+    <string name="recap_top_song">Il tuo brano top</string>
+    <string name="recap_top_artist">Il tuo artista top</string>
+    <string name="local_albums">Album</string>
 </resources>
 

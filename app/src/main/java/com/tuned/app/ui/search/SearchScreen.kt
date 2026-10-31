@@ -345,7 +345,7 @@ fun SearchScreen(
                         }
 
                         if (matchingRecent.isNotEmpty()) {
-                            items(matchingRecent, key = { "recent_match_$it" }) { recentText ->
+                            items(matchingRecent.distinct(), key = { "recent_match_$it" }) { recentText ->
                                 SuggestionRow(
                                     fullText = recentText,
                                     query = state.query,
@@ -359,7 +359,7 @@ fun SearchScreen(
                             }
                         }
 
-                        items(state.suggestions.filter { !matchingRecent.contains(it) }, key = { "sugg_$it" }) { suggestion ->
+                        items(state.suggestions.filter { !matchingRecent.contains(it) }.distinct(), key = { "sugg_$it" }) { suggestion ->
                             SuggestionRow(
                                 fullText = suggestion,
                                 query = state.query,
@@ -509,7 +509,8 @@ fun SearchScreen(
                                     }
 
                                     items(
-                                        if (state.tab == SearchTab.USERS) state.results else otherResults,
+                                        (if (state.tab == SearchTab.USERS) state.results else otherResults)
+                                            .distinctBy { it.entityId ?: it.url.ifBlank { it.name + it.artist.orEmpty() } },
                                         key = { it.entityId ?: it.url.ifBlank { it.name + it.artist.orEmpty() } },
                                         contentType = { "search_result" },
                                     ) { item ->
@@ -983,8 +984,14 @@ private fun SearchResultRow(
                 SearchTab.ARTISTS -> item.subtitle.orEmpty()
                 SearchTab.USERS -> item.listeners?.let { "$it scrobbles" } ?: item.artist.orEmpty()
             }
-            if (subtitle.isNotBlank()) {
-                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle.isNotBlank() || item.explicit) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (item.explicit) {
+                        com.tuned.app.ui.common.ExplicitTag(color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
             }
         }
         if (tab == SearchTab.USERS) {

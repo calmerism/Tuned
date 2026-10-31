@@ -1,10 +1,9 @@
 package com.tuned.app.data
 
 /**
- * Names of data saved on the device. Tuned began as a fork of LastWave and these
- * values come from it; changing one would orphan what users already have (their
- * library, settings, queue, downloads), so they stay as they are. New stores
- * should use Tuned's own names.
+ * Names of data saved on the device. These are the names already on people's phones;
+ * changing one would orphan what users have (their library, settings, queue,
+ * downloads), so they stay as they are. New stores should use Tuned's own names.
  */
 object StorageNames {
     const val DATABASE = "lastwave.db"

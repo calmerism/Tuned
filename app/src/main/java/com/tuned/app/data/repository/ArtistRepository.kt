@@ -49,9 +49,11 @@ class ArtistRepository @Inject constructor(
             if (targetBrowseId == null) {
                 val searchResults = runCatching { innerTube.searchArtists(cleanName, limit = 5) }.getOrNull().orEmpty()
                 val match = searchResults.firstOrNull { it.name.equals(cleanName, ignoreCase = true) }
-                    ?: searchResults.firstOrNull()
-                targetBrowseId = match?.browseId
-                searchArtwork = match?.artworkUrl?.takeIf(ArtworkNormalizer::isRealImage)
+                // Search can't find some names ("¥$"), but a song or album credit may have named the channel.
+                val knownId = if (match == null) innerTube.knownArtistId(cleanName) else null
+                val chosen = match ?: searchResults.firstOrNull().takeIf { knownId == null }
+                targetBrowseId = knownId ?: chosen?.browseId
+                searchArtwork = chosen?.artworkUrl?.takeIf(ArtworkNormalizer::isRealImage)
             }
             val resolvedId = targetBrowseId
 

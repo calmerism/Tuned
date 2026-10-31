@@ -22,7 +22,7 @@ import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DataSpec
-import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.datasource.cache.Cache
@@ -52,6 +52,7 @@ import androidx.media3.extractor.DefaultExtractorsFactory
 import androidx.media3.extractor.ExtractorsFactory
 import androidx.media3.extractor.mp3.Mp3Extractor
 import androidx.media3.extractor.ts.AdtsExtractor
+import com.tuned.app.data.download.Fmp4IndexBuilder
 import com.tuned.app.data.plugin.SegmentedMpdBuilder
 import coil.imageLoader
 import coil.request.ImageRequest
@@ -150,6 +151,8 @@ data class PlayableTrack(
     val mediaType: MediaType = MediaType.SONG,
     /** Podcast show id (MPSPPL…) when this entry is a podcast episode. */
     val showId: String? = null,
+    /** YouTube Music marks it explicit. */
+    val explicit: Boolean = false,
 )
 
 @Serializable
@@ -167,6 +170,8 @@ internal data class PersistedPlaybackSession(
     val durationMs: Long = 0L,
 )
 
+private const val SONG_VERSION_LOOKUP_MS = 2_500L
+private const val CAST_VOLUME_STEP = 0.05f
 private const val BEAT_LOCK_CHECK_MS = 1_000L
 private const val BEAT_LOCK_UNTIL = 0.6f
 private const val SPEED_EASE_STEPS = 8
@@ -294,7 +299,15 @@ class MusicPlayer @Inject constructor(
     private val streamResolver = StreamResolveCoordinator(
         cacheDir = File(appContext.cacheDir, "playback_stream_cache"),
         scope = applicationScope,
-        extract = { videoId -> innerTube.resolveAudioStream(videoId) },
+        extract = { videoId ->
+            // Song audio over a music video's whenever the song exists. The stream keeps the
+            // requested id, so the cache and the track both still agree on what was asked for.
+            val song = withTimeoutOrNull(SONG_VERSION_LOOKUP_MS) {
+                runCatching { innerTube.songVersionOf(videoId) }.getOrNull()
+            }
+            if (song != null) android.util.Log.i("MusicPlayer", "Playing song $song in place of video $videoId")
+            innerTube.resolveAudioStream(song ?: videoId).copy(videoId = videoId)
+        },
     )
     private val streamResolutionWakeLock by lazy {
         (appContext.getSystemService(Context.POWER_SERVICE) as? PowerManager)?.newWakeLock(
@@ -316,6 +329,26 @@ class MusicPlayer @Inject constructor(
     }
     private var castPlayback: com.tuned.app.playback.cast.CastPlayback? = null
     private val isCasting: Boolean get() = castPlayback?.active == true
+    private val _castVolume = MutableStateFlow<Float?>(null)
+    /** The Cast device's volume, 0 to 1, or null when nothing is casting. */
+    val castVolume: StateFlow<Float?> = _castVolume.asStateFlow()
+
+    internal fun onCastVolumeChanged(volume: Float?) {
+        _castVolume.value = volume?.coerceIn(0f, 1f)
+    }
+
+    fun setCastVolume(volume: Float) {
+        val clamped = volume.coerceIn(0f, 1f)
+        _castVolume.value = clamped
+        castPlayback?.setVolume(clamped)
+    }
+
+    /** One press of a volume key while casting. */
+    fun stepCastVolume(up: Boolean): Boolean {
+        val current = _castVolume.value ?: return false
+        setCastVolume(current + if (up) CAST_VOLUME_STEP else -CAST_VOLUME_STEP)
+        return true
+    }
 
     fun initializeCast(): Boolean = runCatching {
         if (castPlayback == null) {
@@ -704,22 +737,34 @@ class MusicPlayer @Inject constructor(
     }
 
     private val cacheDataSourceFactory: CacheDataSource.Factory by lazy {
-        val httpUpstream = DefaultHttpDataSource.Factory()
+        // IPv4 first: HttpURLConnection waits out a full connect timeout on a broken
+        // IPv6 route before trying IPv4. Kept off the API client's interceptors and cache.
+        val mediaHttp = okhttp3.OkHttpClient.Builder()
+            .dns(com.tuned.app.data.network.Ipv4FirstDnsResolver())
+            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .build()
+        val httpUpstream = OkHttpDataSource.Factory(mediaHttp)
             .setUserAgent(YOUTUBE_WEB_USER_AGENT)
-            .setAllowCrossProtocolRedirects(true)
-            .setConnectTimeoutMs(20_000)
-            .setReadTimeoutMs(20_000)
             .setContentTypePredicate(HttpDataSource.REJECT_PAYWALL_TYPES)
             .setDefaultRequestProperties(
                 mapOf(
                     "Accept" to "audio/*,*/*;q=0.8",
                     "Accept-Encoding" to "identity",
+                    "Origin" to "https://music.youtube.com",
+                    "Referer" to "https://music.youtube.com/",
                 ),
             )
         val defaultDataSourceFactory = androidx.media3.datasource.DefaultDataSource.Factory(appContext, httpUpstream)
+        // YouTube refuses long open-ended reads, so these go in ranges.
+        val chunkedUpstreamFactory = androidx.media3.datasource.DataSource.Factory {
+            ChunkedRangeDataSource(defaultDataSourceFactory.createDataSource())
+        }
         CacheDataSource.Factory()
             .setCache(mediaCache)
-            .setUpstreamDataSourceFactory(defaultDataSourceFactory)
+            .setUpstreamDataSourceFactory(chunkedUpstreamFactory)
             .setFlags(CacheDataSource.FLAG_IGNORE_CACHE_ON_ERROR)
     }
 
@@ -885,7 +930,15 @@ class MusicPlayer @Inject constructor(
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, playWhenReadyChangeReason: Int) {
             // Hold focus exactly while playback is intended: requesting it
             // anywhere else just fights the other apps that own focus.
-            if (playWhenReady) requestMediaAudioFocus() else abandonMediaAudioFocus()
+            //
+            // A pause caused by a *focus change* must not abandon the request:
+            // the platform only delivers AUDIOFOCUS_GAIN back to the app that
+            // still owns the lost request, so abandoning here killed
+            // PauseTransiently's recovery path — the song paused for a call or
+            // a notification ding and never resumed. restoreAfterAudioFocus()
+            // drops the request itself on the user's own pause.
+            if (playWhenReady) requestMediaAudioFocus()
+            else if (!pausingForAudioFocus) abandonMediaAudioFocus()
         }
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (isCasting) return
@@ -2427,7 +2480,8 @@ class MusicPlayer @Inject constructor(
                             return@withContext
                         }
                         unavailableMediaIds += failedKey
-                        val nextIndex = if (startShuffled) {
+                        val isShuffle = startShuffled || (playerDelegate.isInitialized() && player.shuffleModeEnabled)
+                        val nextIndex = if (isShuffle) {
                             tracks.indices
                                 .filter { tracks[it].mediaIdKey() !in unavailableMediaIds }
                                 .randomOrNull()
@@ -2448,7 +2502,7 @@ class MusicPlayer @Inject constructor(
                                 startPositionMs = 0L,
                                 sourceLabel = sourceLabel,
                                 endlessDiscover = endlessDiscover,
-                                startShuffled = startShuffled,
+                                startShuffled = isShuffle,
                             )
                         } else {
                             val isOffline = isNetworkException(error)
@@ -2621,15 +2675,32 @@ class MusicPlayer @Inject constructor(
         player.play()
     }
 
-    fun pause() {
+    fun pause() = pauseInternal(focusInitiated = false)
+
+    /**
+     * @param focusInitiated true when this pause answers an audio-focus loss.
+     *   Such a pause must leave the focus request in place: the platform only
+     *   delivers AUDIOFOCUS_GAIN back to the app that still owns the lost
+     *   request, so abandoning it here would strand [pauseForAudioFocus]'s
+     *   recovery and a brief interruption would never resume.
+     */
+    private fun pauseInternal(focusInitiated: Boolean) {
         // A deliberate pause supersedes a focus-induced one, so a later
         // AUDIOFOCUS_GAIN must not resurrect playback the user stopped.
-        if (!pausingForAudioFocus) focusPauseAwaitingRecovery = false
+        if (!focusInitiated) focusPauseAwaitingRecovery = false
         cancelPendingPlaybackResolution()
         onMain {
             exclusiveUsbOutput.setPaused(true)
             if (isCasting) castPlayback?.pause()
-            if (playerDelegate.isInitialized()) player.pause()
+            // Set for the duration of the player pause so the
+            // onPlayWhenReadyChanged listener sees it on whichever thread this
+            // ran, and cleared before the state bookkeeping below.
+            pausingForAudioFocus = focusInitiated
+            try {
+                if (playerDelegate.isInitialized()) player.pause()
+            } finally {
+                pausingForAudioFocus = false
+            }
             _state.update { it.copy(isPlaying = false, isBuffering = false) }
             checkpointPodcastProgress()
             persistPlaybackSession()
@@ -2693,10 +2764,10 @@ class MusicPlayer @Inject constructor(
         if (isCasting) return
         val playing = _state.value.isPlaying ||
             (playerDelegate.isInitialized() && player.playWhenReady)
-        pausingForAudioFocus = true
+        // A permanent loss must also clear any intent left by an earlier
+        // transient one, so this assignment is unconditional.
         focusPauseAwaitingRecovery = autoRestore && playing
-        if (playing) pause()
-        pausingForAudioFocus = false
+        if (playing) pauseInternal(focusInitiated = true)
     }
 
     private fun restoreAfterAudioFocus() {
@@ -4829,6 +4900,9 @@ class MusicPlayer @Inject constructor(
         // Save the podcast resume position before the queue is torn down.
         checkpointPodcastProgress()
         if (!clearSession) persistPlaybackSession()
+        // stop() leaves playWhenReady alone, so no listener would abandon the focus
+        // still held, and other media apps would keep ducking to a stopped player.
+        abandonMediaAudioFocus()
         player.stop()
         player.clearMediaItems()
         // Shuffle is engine state that survives stop()/clearMediaItems(): without
@@ -5441,6 +5515,19 @@ class MusicPlayer @Inject constructor(
                         } else {
                             emptyList()
                         }
+                    } else if (seed.artist.isNotBlank()) {
+                        val artistTracks = retryRadioRequest { innerTube.searchSongs(seed.artist, limit = 25) }
+                        if (expectedGeneration != playRequestGeneration.get() || !radioQueueActive) return@withLock
+                        PureRadioQueue.filterStrictYtmRadioBatch(
+                            incomingTracks = (artistTracks ?: emptyList()).map { it.toPlayableTrack() },
+                            existingVideoIds = existingVideoIds,
+                            existingKeys = existingKeys,
+                            existingSongKeys = existingSongKeys,
+                            recentVideoIds = recentHistoryKeys,
+                            recentKeys = recentHistoryKeys,
+                            seedVideoId = "",
+                            seedSongKey = PureRadioQueue.normalizedSongKey(seed.title, seed.artist),
+                        )
                     } else {
                         emptyList()
                     }
@@ -5455,7 +5542,7 @@ class MusicPlayer @Inject constructor(
                             (current?.title.equals(seed.title, ignoreCase = true) && current?.artist.equals(seed.artist, ignoreCase = true))
                         if (!stillCurrentSeed) return@withContext
 
-                        val currentIndex = player.currentMediaItemIndex
+                        val currentIndex = player.currentMediaItemIndex.coerceAtLeast(0)
                         if (player.mediaItemCount > currentIndex + 1) {
                             player.removeMediaItems(currentIndex + 1, player.mediaItemCount)
                         }
@@ -6056,6 +6143,7 @@ class MusicPlayer @Inject constructor(
             }
             return
         }
+        player.pause()
         unavailableSkipJob?.cancel()
         unavailableSkipJob = applicationScope.launch(Dispatchers.Main.immediate) {
             yield()
@@ -6067,7 +6155,7 @@ class MusicPlayer @Inject constructor(
                 snapshot.queue.getOrNull(failedIndex)?.mediaIdKey() == failedMediaId
             }
             if (expectedGeneration != playRequestGeneration.get() ||
-                !failedItemStillQueued || _state.value.currentIndex != failedIndex || player.isPlaying
+                !failedItemStillQueued || _state.value.currentIndex != failedIndex
             ) {
                 unavailableSkipJob = null
                 return@launch
@@ -6180,6 +6268,7 @@ class MusicPlayer @Inject constructor(
         isLosslessTrack: Boolean? = null,
         knownBitrate: Int? = null,
         fallbackMime: String? = null,
+        knownDurationMs: Long? = null,
     ): ResolvedStream? {
         val uri = if (targetUrl.startsWith("/") && !targetUrl.startsWith("file://")) {
             Uri.fromFile(File(targetUrl))
@@ -6228,6 +6317,7 @@ class MusicPlayer @Inject constructor(
         var bitrateKbps: Int? = knownBitrate
         var bitDepth: Int? = null
         var samplingRateKHz: Double? = null
+        var fileDurationMs: Long? = null
 
         runCatching {
             val retriever = android.media.MediaMetadataRetriever()
@@ -6237,6 +6327,8 @@ class MusicPlayer @Inject constructor(
                 } else {
                     retriever.setDataSource(uri.path ?: targetUrl.removePrefix("file://"))
                 }
+                fileDurationMs = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_DURATION)
+                    ?.toLongOrNull()?.takeIf { it > 0 }
                 if (bitrateKbps == null || bitrateKbps == 0) {
                     bitrateKbps = retriever.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_BITRATE)
                         ?.toIntOrNull()?.let { it / 1000 }
@@ -6251,6 +6343,24 @@ class MusicPlayer @Inject constructor(
                 retriever.release()
             }
         }
+
+        // Heal unindexed fragmented MP4s (Atmos / AAC DASH downloads):
+        // If file is local and writable, build mfra seek index and patch duration in-place.
+        if (pathLower.endsWith(".m4a") || pathLower.endsWith(".mp4")) {
+            runCatching {
+                val candidatePath = uri.path ?: targetUrl.removePrefix("file://")
+                val localFile = File(candidatePath)
+                if (localFile.isFile && localFile.canWrite()) {
+                    val finalDurationHint = fileDurationMs ?: knownDurationMs ?: 0L
+                    if (Fmp4IndexBuilder.finalizeFmp4(localFile, finalDurationHint)) {
+                        if (fileDurationMs == null || fileDurationMs <= 0L) {
+                            fileDurationMs = knownDurationMs?.takeIf { it > 0 }
+                        }
+                    }
+                }
+            }
+        }
+
         // FLAC STREAMINFO fallback: device- and API-independent ground truth.
         // The retriever keys above need API 31+ and still return null on
         // several OEMs/files, which left bitDepth null and the pill stuck at
@@ -6291,6 +6401,7 @@ class MusicPlayer @Inject constructor(
 
         val isLossless = isLosslessTrack ?: mime.contains("flac")
         val trackKey = "${displayArtist.lowercase()}_${displayTitle.lowercase()}"
+        val effectiveDurationMs = fileDurationMs ?: knownDurationMs?.takeIf { it > 0 }
 
         return ResolvedStream(
             url = uri.toString(),
@@ -6301,6 +6412,7 @@ class MusicPlayer @Inject constructor(
             isLossless = isLossless,
             bitDepth = if (isLossless) bitDepth?.takeIf { it > 0 } else null,
             samplingRateKHz = samplingRateKHz?.takeIf { it > 0.0 },
+            durationMs = effectiveDurationMs,
         )
     }
 
@@ -6385,6 +6497,7 @@ class MusicPlayer @Inject constructor(
                 displayTitle = title,
                 displayArtist = artist,
                 fallbackMime = track.playbackMimeType,
+                knownDurationMs = track.durationMs ?: findKnownDuration(track),
             )
             if (resolved != null) return resolved
         }
@@ -6441,6 +6554,7 @@ class MusicPlayer @Inject constructor(
                     badge = downloaded.formatBadge,
                     isLosslessTrack = downloaded.isLossless,
                     knownBitrate = downloaded.bitrateKbps,
+                    knownDurationMs = downloaded.durationMs.takeIf { it > 0L },
                 )
                 if (resolved != null) {
                     if (candidate != downloaded.filePath && candidate.startsWith("/")) {
@@ -6482,6 +6596,7 @@ class MusicPlayer @Inject constructor(
                     targetUrl = candidateFile.absolutePath,
                     displayTitle = title,
                     displayArtist = artist,
+                    knownDurationMs = track.durationMs ?: findKnownDuration(track),
                 )
                 if (resolved != null) {
                     runCatching {
@@ -8261,12 +8376,25 @@ class MusicPlayer @Inject constructor(
     private fun isDeadVideoIdFailure(error: Throwable): Boolean =
         error.causeChain().any { cause ->
             cause is ConfirmedUnplayableMediaException ||
-                (cause is java.io.IOException &&
-                    cause.message?.contains("Unable to resolve a playable audio stream") == true)
+                (cause is java.io.IOException && cause.message?.let { msg ->
+                    msg.contains("Unable to resolve a playable audio stream", ignoreCase = true) ||
+                    msg.contains("No reliable YouTube Music match found", ignoreCase = true) ||
+                    msg.contains("No playable match found", ignoreCase = true)
+                } == true)
         }
 
     private fun isExplicitlyUnplayableFailure(error: Throwable): Boolean =
-        error.causeChain().filterIsInstance<java.io.IOException>().firstOrNull() is ConfirmedUnplayableMediaException
+        error.causeChain().any { cause ->
+            cause is ConfirmedUnplayableMediaException ||
+                (cause is java.io.IOException && cause.message?.let { msg ->
+                    msg.contains("No reliable YouTube Music match found", ignoreCase = true) ||
+                    msg.contains("No playable match found", ignoreCase = true) ||
+                    msg.contains("Unable to resolve a playable audio stream", ignoreCase = true) ||
+                    msg.contains("No video ID or search query available", ignoreCase = true) ||
+                    msg.contains("Rejected mismatched stream", ignoreCase = true) ||
+                    msg.contains("No audio stream available", ignoreCase = true)
+                } == true)
+        }
 
     private fun isUnsupportedMediaFailure(error: Throwable): Boolean =
         error.causeChain().filterIsInstance<PlaybackException>().any {
@@ -8658,6 +8786,7 @@ private fun PlayableTrack.toMediaItem(resolved: MusicPlayer.ResolvedStream? = nu
                         internalTrackId?.takeIf { it.isNotBlank() }?.let { putString("internalTrackId", it) }
                         putString("mediaType", mediaType.name)
                         showId?.takeIf { it.isNotBlank() }?.let { putString("showId", it) }
+                        if (explicit) putBoolean("explicit", true)
                     }
                 )
                 .build(),
@@ -8709,6 +8838,7 @@ private fun MediaItem.toPlayableTrack(): PlayableTrack {
         durationMs = dur,
         mediaType = mediaType,
         showId = mediaMetadata.extras?.getString("showId"),
+        explicit = mediaMetadata.extras?.getBoolean("explicit") == true,
     )
 }
 
@@ -8742,6 +8872,7 @@ fun YouTubeMusicTrack.toPlayableTrack(): PlayableTrack =
         artworkUrl = artworkUrl,
         videoId = videoId.takeIf(String::isNotBlank),
         durationMs = durationSeconds?.takeIf { it > 0 }?.times(1_000L),
+        explicit = explicit,
     )
 
 private fun PlayableTrack.queueKey(): String =

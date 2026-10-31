@@ -24,10 +24,15 @@ object ArtworkNormalizer {
     fun isVideoThumbnail(url: String?): Boolean =
         url != null && (url.contains("i.ytimg.com/") || url.contains("ytimg.com/vi"))
 
+    /** YouTube Music's own square art for a release, as opposed to a video frame. */
+    fun isYouTubeMusicCover(url: String?): Boolean =
+        url != null && (url.contains("googleusercontent.com/") || url.contains("ggpht.com/"))
+
     /**
      * The picture to show for a track, or null while there is nothing right to
-     * show yet. Covers are square: a local file, then the album cover found
-     * online, then YouTube Music's own square album art. A video thumbnail is
+     * show yet. Covers are square: a local file, then YouTube Music's own art for the
+     * release the track was played from, then the cover found online. The lookup goes by
+     * title and artist, so it can't tell an album track from its single. A video thumbnail is
      * only used once the lookup confirms there is no album cover anywhere
      * (the track really is a YouTube video).
      *
@@ -41,6 +46,7 @@ object ArtworkNormalizer {
         embeddedFailed: Boolean = false,
     ): String? {
         if (embeddedUrl?.startsWith("file://") == true && !embeddedFailed) return embeddedUrl
+        if (isYouTubeMusicCover(embeddedUrl) && !embeddedFailed) return upscaleYoutubeArtwork(embeddedUrl)
         if (!resolved.isNullOrBlank() && !resolvedFailed) return resolved
         if (!isRealImage(embeddedUrl) || embeddedFailed) return null
         val noAlbumCover = resolved == "" || resolvedFailed

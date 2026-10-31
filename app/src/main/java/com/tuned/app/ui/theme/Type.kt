@@ -3,6 +3,9 @@
 package com.tuned.app.ui.theme
 
 import androidx.compose.material3.Typography
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.text.PlatformTextStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.Font
@@ -140,27 +143,45 @@ private fun style(
  * that are multiples of 4sp so text sits on the 4dp grid.
  */
 object AppType {
+    /** The "Tuned font" setting, set by the theme. Off, the same scale uses the system's typeface. */
+    internal var useTunedFont by mutableStateOf(true)
+
+    private fun styled(style: TextStyle) = if (useTunedFont) style else style.copy(fontFamily = FontFamily.Default)
+
+
     /** 36/40. Big names and stat headlines. */
-    val display = style(gsFlex(760f, 122f, 42f, 36f), 760, 36.sp, 40.sp)
+    val display: TextStyle get() = styled(tunedDisplay)
     /** 28/32. Screen titles. */
-    val headline = style(gsFlex(780f, 120f, 38f, 28f), 780, 28.sp, 32.sp)
+    val headline: TextStyle get() = styled(tunedHeadline)
     /** 22/28. Section headers, player title. */
-    val titleL = style(gsFlex(700f, 112f, 32f, 22f), 700, 22.sp, 28.sp)
+    val titleL: TextStyle get() = styled(tunedTitleL)
     /** 17/24. Sheet titles and header titles. */
-    val title = style(gsFlex(620f, 108f, 28f, 17f), 620, 17.sp, 24.sp)
+    val title: TextStyle get() = styled(tunedTitle)
     /** 15/20. Row titles and body copy. */
-    val body = style(gsFlex(500f, 104f, 20f, 15f), 500, 15.sp, 20.sp)
+    val body: TextStyle get() = styled(tunedBody)
     /** 15/20 semibold. Emphasised body text. */
-    val bodyStrong = style(gsFlex(600f, 106f, 26f, 15f), 600, 15.sp, 20.sp)
+    val bodyStrong: TextStyle get() = styled(tunedBodyStrong)
     /** 13/16. Row subtitles and secondary text. */
-    val bodyS = style(gsFlex(430f, 100f, 16f, 13f), 430, 13.sp, 16.sp, tabular = true)
+    val bodyS: TextStyle get() = styled(tunedBodyS)
     /** 13/16 bold and rounder. Buttons, chips and tabs. */
-    val label = style(gsFlex(680f, 108f, 46f, 13f), 680, 13.sp, 16.sp, tabular = true)
+    val label: TextStyle get() = styled(tunedLabel)
     /** 12/16. Timestamps and footnotes. */
-    val caption = style(gsFlex(600f, 106f, 40f, 12f), 600, 12.sp, 16.sp, tabular = true)
+    val caption: TextStyle get() = styled(tunedCaption)
     /** 12/16 data: bitrate, sample rate, durations, counts. The app font with
      *  fixed-width digits (the owner wants no mono face anywhere). */
-    val mono = style(gsFlex(600f, 106f, 40f, 12f), 600, 12.sp, 16.sp, tabular = true)
+    val mono: TextStyle get() = styled(tunedMono)
     /** 28/32 large statistics, app font with fixed-width digits. */
-    val monoL = style(gsFlex(760f, 116f, 40f, 28f), 760, 28.sp, 32.sp, letterSpacing = (-0.5).sp, tabular = true)
+    val monoL: TextStyle get() = styled(tunedMonoL)
+
+    private val tunedDisplay = style(gsFlex(760f, 122f, 42f, 36f), 760, 36.sp, 40.sp)
+    private val tunedHeadline = style(gsFlex(780f, 120f, 38f, 28f), 780, 28.sp, 32.sp)
+    private val tunedTitleL = style(gsFlex(700f, 112f, 32f, 22f), 700, 22.sp, 28.sp)
+    private val tunedTitle = style(gsFlex(620f, 108f, 28f, 17f), 620, 17.sp, 24.sp)
+    private val tunedBody = style(gsFlex(500f, 104f, 20f, 15f), 500, 15.sp, 20.sp)
+    private val tunedBodyStrong = style(gsFlex(600f, 106f, 26f, 15f), 600, 15.sp, 20.sp)
+    private val tunedBodyS = style(gsFlex(430f, 100f, 16f, 13f), 430, 13.sp, 16.sp, tabular = true)
+    private val tunedLabel = style(gsFlex(680f, 108f, 46f, 13f), 680, 13.sp, 16.sp, tabular = true)
+    private val tunedCaption = style(gsFlex(600f, 106f, 40f, 12f), 600, 12.sp, 16.sp, tabular = true)
+    private val tunedMono = style(gsFlex(600f, 106f, 40f, 12f), 600, 12.sp, 16.sp, tabular = true)
+    private val tunedMonoL = style(gsFlex(760f, 116f, 40f, 28f), 760, 28.sp, 32.sp, letterSpacing = (-0.5).sp, tabular = true)
 }

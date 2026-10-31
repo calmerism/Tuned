@@ -20,6 +20,8 @@ Tuned is an Android music player for YouTube Music. It plays songs, albums, play
 - **Song transitions**: crossfade, or AutoMix, which beat-matches songs when their tempos are close.
 - **Playback controls**: speed and pitch, a sleep timer, Android Auto and Chromecast.
 - **Playlist Playground**: type an idea and get a playlist built from YouTube Music searches.
+- **Yearly recap**: minutes, top songs and top artists for the year, ready to share.
+- **Pins**: keep favourite songs, albums and artists at the top of Library.
 - **In-app updates**: checks GitHub for new releases, then downloads and installs them from Settings.
 - **Widgets**: Full cover, Small, Medium and Wide, each coloured from the song's cover.
 - **Library import**: installed over the app it replaces, Tuned brings over liked songs, playlists, listening history, searches and the YouTube Music sign-in on first launch.

@@ -123,9 +123,22 @@ class AlbumViewModel @Inject constructor(
         }
     }
 
+    /** Finds another edition of this album, then [onFound] opens it or [onMissing] says it isn't there. */
+    fun openOtherVersion(title: String, artist: String, onFound: (String) -> Unit, onMissing: () -> Unit) {
+        val current = (_uiState.value as? AlbumUiState.Success)?.data?.browseId.orEmpty()
+        viewModelScope.launch {
+            val browseId = repository.findOtherVersion(title, artist, current)
+            if (browseId != null) onFound(browseId) else onMissing()
+        }
+    }
+
+    /** Everything played from an album page wears the album's cover, not a track's single art. */
+    private fun AlbumPageData.tracksWithCover(): List<PlayableTrack> =
+        artworkUrl?.let { cover -> tracks.map { it.copy(artworkUrl = cover) } } ?: tracks
+
     fun playAll(startIndex: Int = 0) {
         val state = _uiState.value as? AlbumUiState.Success ?: return
-        val tracks = state.data.tracks
+        val tracks = state.data.tracksWithCover()
         if (tracks.isNotEmpty()) {
             musicPlayer.playQueue(
                 tracks,
@@ -137,7 +150,7 @@ class AlbumViewModel @Inject constructor(
 
     fun playShuffle() {
         val state = _uiState.value as? AlbumUiState.Success ?: return
-        val tracks = state.data.tracks
+        val tracks = state.data.tracksWithCover()
         if (tracks.isNotEmpty()) {
             val shuffled = tracks.shuffled()
             musicPlayer.playQueue(

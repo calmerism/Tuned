@@ -73,6 +73,8 @@ class LocalMusicLibrary @Inject constructor(
         val size: Long,
         val lrcDocumentId: String?,
         val coverDocumentId: String?,
+        /** The folder holding the file, the album when the tags don't name one. */
+        val folderName: String?,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -88,6 +90,9 @@ class LocalMusicLibrary @Inject constructor(
 
     private val _folders = MutableStateFlow(loadFolders())
     val folders: StateFlow<List<Uri>> = _folders.asStateFlow()
+    private val _trackFolders = MutableStateFlow(loadTrackFolders())
+    /** Which picked folder each song came from: its file path to the folder's address. */
+    val trackFolders: StateFlow<Map<String, String>> = _trackFolders.asStateFlow()
 
     val isRunning: Boolean get() = job?.isActive == true
 
@@ -112,6 +117,26 @@ class LocalMusicLibrary @Inject constructor(
             context.contentResolver.releasePersistableUriPermission(treeUri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
         saveFolders(_folders.value.filterNot { it == treeUri })
+        saveTrackFolders(_trackFolders.value.filterValues { it != treeUri.toString() })
+    }
+
+    /** Songs imported before folders were recorded get theirs the next time this is asked. */
+    fun fillMissingTrackFolders() {
+        if (_folders.value.isNotEmpty() && _trackFolders.value.isEmpty()) rescanAll()
+    }
+
+    private fun loadTrackFolders(): Map<String, String> =
+        prefs.getString(KEY_TRACK_FOLDERS, null)?.lineSequence()
+            ?.mapNotNull { line ->
+                val tab = line.indexOf('\t')
+                if (tab > 0) line.substring(0, tab) to line.substring(tab + 1) else null
+            }
+            ?.toMap()
+            .orEmpty()
+
+    private fun saveTrackFolders(map: Map<String, String>) {
+        prefs.edit().putString(KEY_TRACK_FOLDERS, map.entries.joinToString("\n") { "${it.key}\t${it.value}" }).apply()
+        _trackFolders.value = map
     }
 
     fun acknowledgeReport() {
@@ -153,7 +178,7 @@ class LocalMusicLibrary @Inject constructor(
         var unreachable = 0
         for (tree in folders) {
             val rootDocId = runCatching { DocumentsContract.getTreeDocumentId(tree) }.getOrNull()
-            if (rootDocId == null || !walk(tree, rootDocId, 0, entries, unsupported)) unreachable++
+            if (rootDocId == null || !walk(tree, rootDocId, rootDocId.substringAfterLast(':').substringAfterLast('/'), 0, entries, unsupported)) unreachable++
         }
 
         val existing = playlistRepository.ensureLocalSongs().tracks.associateBy { it.url }
@@ -170,6 +195,7 @@ class LocalMusicLibrary @Inject constructor(
         var unchanged = 0
         var failed = 0
         var bytes = 0L
+        val folderOf = _trackFolders.value.toMutableMap()
         entries.forEachIndexed { index, entry ->
             currentCoroutineContext().ensureActive()
             _state.value = ImportState.Copying(index, entries.size, entry.displayName)
@@ -184,6 +210,7 @@ class LocalMusicLibrary @Inject constructor(
                     runCatching { copyDocument(entry.treeUri, lrcId, File(LocalAudioFormats.lrcPathFor(dest.path))) }
                 }
                 val path = dest.absolutePath
+                folderOf[path] = entry.treeUri.toString()
                 val known = existing[path]
                 if (sameFile && known != null) {
                     unchanged++
@@ -199,6 +226,7 @@ class LocalMusicLibrary @Inject constructor(
             }
         }
         _state.value = ImportState.Copying(entries.size, entries.size, "")
+        saveTrackFolders(folderOf)
         if (updates.isNotEmpty() || additions.isNotEmpty()) {
             playlistRepository.mergeLocalSongs(updates, additions)
         }
@@ -217,6 +245,7 @@ class LocalMusicLibrary @Inject constructor(
     private suspend fun walk(
         tree: Uri,
         parentDocId: String,
+        folderName: String,
         depth: Int,
         out: MutableList<AudioEntry>,
         unsupported: MutableMap<String, Int>,
@@ -268,6 +297,7 @@ class LocalMusicLibrary @Inject constructor(
                     size = file.size,
                     lrcDocumentId = lrcByBase[file.name.substringBeforeLast('.').lowercase()]?.id,
                     coverDocumentId = folderCover?.id,
+                    folderName = folderName,
                 )
                 ext in LocalAudioFormats.UNSUPPORTED_AUDIO -> unsupported[ext] = (unsupported[ext] ?: 0) + 1
             }
@@ -275,7 +305,7 @@ class LocalMusicLibrary @Inject constructor(
         _state.value = ImportState.Scanning(out.size)
         children.filter { it.mime == DocumentsContract.Document.MIME_TYPE_DIR }
             .sortedBy { it.name.lowercase() }
-            .forEach { dir -> walk(tree, dir.id, depth + 1, out, unsupported) }
+            .forEach { dir -> walk(tree, dir.id, dir.name, depth + 1, out, unsupported) }
         return true
     }
 
@@ -300,6 +330,8 @@ class LocalMusicLibrary @Inject constructor(
         var title: String? = null
         var artist: String? = null
         var album: String? = null
+        var trackNumber: Int? = null
+        var year: String? = null
         var artwork: String? = null
         val retriever = MediaMetadataRetriever()
         try {
@@ -309,6 +341,10 @@ class LocalMusicLibrary @Inject constructor(
                 ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST))
                 ?.trim()?.takeIf { it.isNotEmpty() }
             album = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM)?.trim()?.takeIf { it.isNotEmpty() }
+            trackNumber = LocalMusicNaming.trackNumber(retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_CD_TRACK_NUMBER))
+            year = (retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_YEAR)
+                ?: retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_DATE))
+                ?.take(4)?.takeIf { it.length == 4 && it.all(Char::isDigit) }
             retriever.embeddedPicture?.takeIf { it.isNotEmpty() }?.let { bytes ->
                 val art = File(artDir, LocalMusicNaming.stableId(bytes) + ".img")
                 if (!art.exists()) art.writeBytes(bytes)
@@ -329,7 +365,9 @@ class LocalMusicLibrary @Inject constructor(
         return GeneratedTrack(
             name = title ?: fallback.title,
             artist = artist ?: fallback.artist ?: UNKNOWN_ARTIST,
-            album = album,
+            album = album ?: entry.folderName?.let(LocalMusicNaming::albumFromFolder),
+            trackNumber = trackNumber,
+            year = year,
             artworkUrl = artwork,
             url = file.absolutePath,
         )
@@ -392,6 +430,7 @@ class LocalMusicLibrary @Inject constructor(
         private const val ART_DIR = "art"
         private const val PREFS = "local_music"
         private const val KEY_FOLDERS = "folders"
+        private const val KEY_TRACK_FOLDERS = "track_folders"
         private const val MAX_DEPTH = 24
         private const val COPY_BUFFER = 256 * 1024
         private const val SPACE_MARGIN_BYTES = 200L * 1024 * 1024
@@ -428,5 +467,17 @@ object LocalMusicNaming {
             .joinToString("") { "%02x".format(it) }
             .take(24)
 
+    /** A folder's name as an album, unless it's a general place to keep music. */
+    fun albumFromFolder(name: String): String? =
+        name.trim().takeIf { it.isNotEmpty() && it.lowercase() !in GENERIC_FOLDERS }
+
+    /** The number from a track tag, which can read "3" or "3/12". */
+    fun trackNumber(tag: String?): Int? = tag?.substringBefore('/')?.trim()?.toIntOrNull()
+
+    private val GENERIC_FOLDERS = setOf(
+        "music", "musik", "musique", "música", "audio", "songs", "tracks", "media", "mp3", "flac",
+        "download", "downloads", "documents", "sdcard", "storage", "primary", "albums", "library",
+        "unknown", "misc", "other", "new folder",
+    )
     private val LEADING_TRACK_NUMBER = Regex("^\\d{1,3}\\s*[-._)]?\\s+")
 }

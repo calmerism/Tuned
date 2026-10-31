@@ -87,7 +87,6 @@ private fun HomeSection.icon(): ImageVector = when (this) {
     HomeSection.ALBUMS -> Icons.Filled.Album
     HomeSection.CHARTS -> Icons.Filled.TrendingUp
     HomeSection.NEW_RELEASES -> Icons.Filled.NewReleases
-    HomeSection.FRIENDS -> Icons.Filled.Group
 }
 
 @HiltViewModel

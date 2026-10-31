@@ -207,6 +207,10 @@ class UsbAudioDevice private constructor(private val context: Context) {
             }?.id ?: -1
         Log.i(TAG, "Playback AudioStreaming interface: $playbackInterfaceId")
 
+        if (currentDevice?.vendorId != device.vendorId || currentDevice?.productId != device.productId) {
+            cachedSupportedRates = emptyList()
+        }
+
         // Find the AudioStreaming interface and its endpoints
         var streamingInterface: UsbInterface? = null
         var endpointOut = -1

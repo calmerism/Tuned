@@ -35,6 +35,7 @@ data class SearchResultItem(
     val subtitle: String? = null,
     val videoId: String? = null,
     val entityId: String? = null,
+    val explicit: Boolean = false,
 )
 
 /**
@@ -103,6 +104,7 @@ class SearchRepository @Inject constructor(
                     subtitle = track.album,
                     videoId = track.videoId,
                     entityId = track.videoId,
+                    explicit = track.explicit,
                 )
             }
             SearchTab.VIDEOS -> innerTube.searchVideos(trimmed).map { track ->
@@ -112,6 +114,7 @@ class SearchRepository @Inject constructor(
                     artworkUrl = track.artworkUrl,
                     videoId = track.videoId,
                     entityId = track.videoId,
+                    explicit = track.explicit,
                 )
             }
             SearchTab.ARTISTS -> innerTube.searchArtists(trimmed).map { artist ->
@@ -129,6 +132,7 @@ class SearchRepository @Inject constructor(
                     artworkUrl = album.artworkUrl,
                     subtitle = album.subtitle,
                     entityId = album.browseId,
+                    explicit = album.explicit,
                 )
             }
             SearchTab.PLAYLISTS -> innerTube.searchPlaylists(trimmed).map { playlist ->

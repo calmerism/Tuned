@@ -179,6 +179,7 @@ class SearchViewModel @Inject constructor(
                             artworkUrl = track.artworkUrl ?: item.artworkUrl,
                             videoId = track.videoId,
                             durationMs = track.durationSeconds?.takeIf { it > 0 }?.times(1_000L),
+                            explicit = track.explicit,
                         )
                     }, sourceLabel = "Search")
                 }

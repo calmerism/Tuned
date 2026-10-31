@@ -230,7 +230,7 @@ private fun CommunitySongRow(
             IconButton(onClick = onMenuClick, modifier = Modifier.size(30.dp)) {
                 Icon(
                     Icons.Filled.MoreVert,
-                    contentDescription = null,
+                    contentDescription = androidx.compose.ui.res.stringResource(com.tuned.app.R.string.common_more),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.size(18.dp),
                 )

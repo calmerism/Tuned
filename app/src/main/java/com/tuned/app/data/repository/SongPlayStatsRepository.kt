@@ -17,6 +17,7 @@ private fun trackKeyOf(title: String, artist: String) = "${title.trim()}|${artis
 @Singleton
 class SongPlayStatsRepository @Inject constructor(
     private val dao: SongPlayStatsDao,
+    private val yearlyDao: com.tuned.app.data.local.db.YearlyListenDao,
 ) {
     suspend fun recordListenedMs(
         title: String,
@@ -37,6 +38,16 @@ class SongPlayStatsRepository @Inject constructor(
                 totalPlayTimeMs = (existing?.totalPlayTimeMs ?: 0L) + listenedMs,
                 playCount = (existing?.playCount ?: 0) + if (completed) 1 else 0,
                 lastPlayedAtMillis = System.currentTimeMillis(),
+            ),
+        )
+        val year = java.util.Calendar.getInstance().get(java.util.Calendar.YEAR)
+        val thisYear = yearlyDao.find(year, key)
+        yearlyDao.upsert(
+            (thisYear ?: com.tuned.app.data.local.db.YearlyListenEntity(year = year, trackKey = key, title = title, artist = artist)).copy(
+                videoId = videoId ?: thisYear?.videoId,
+                artworkUrl = artworkUrl ?: thisYear?.artworkUrl,
+                listenedMs = (thisYear?.listenedMs ?: 0L) + listenedMs,
+                plays = (thisYear?.plays ?: 0) + if (completed) 1 else 0,
             ),
         )
     }

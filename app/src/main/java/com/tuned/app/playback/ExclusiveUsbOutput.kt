@@ -128,14 +128,21 @@ class ExclusiveUsbOutput @Inject constructor(
     }
 
     fun setWanted(enabled: Boolean) {
-        synchronized(lock) {
-            if (wanted == enabled) {
-                if (enabled) {
-                    ensureVolumeObserverLocked()
-                    syncListeningGainLocked()
-                }
-                return
+        // This runs on the main thread, and the lock is held through slow USB control
+        // transfers: with nothing to change, it must not wait, or the app freezes.
+        if (wanted == enabled) {
+            if (enabled) {
+                Thread({
+                    synchronized(lock) {
+                        ensureVolumeObserverLocked()
+                        syncListeningGainLocked()
+                    }
+                }, "ExclusiveUsbVolumeSync").start()
             }
+            return
+        }
+        synchronized(lock) {
+            if (wanted == enabled) return
             wanted = enabled
             if (!enabled) {
                 teardownLocked(closeDevice = true)

@@ -160,6 +160,15 @@ fun PlayerHost(
             currentTab = FullPlayerTab.NOW_PLAYING
         }
     }
+    // A page opening from a link would otherwise sit hidden behind the full player.
+    LaunchedEffect(Unit) {
+        viewModel.pendingAppRoute.collect { route ->
+            if (route != null) {
+                expanded = false
+                currentTab = FullPlayerTab.NOW_PLAYING
+            }
+        }
+    }
     // "Watch video" from any song menu opens the player in video mode.
     LaunchedEffect(Unit) {
         MusicVideoMode.openRequests.collect {

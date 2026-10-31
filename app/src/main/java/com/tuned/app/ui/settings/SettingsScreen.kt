@@ -523,7 +523,7 @@ fun SettingsScreen(
                         // Music first and Last.fm last now that Last.fm is optional, then app-level items.
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("General")
+                                SectionLabel(stringResource(R.string.settings_label_general))
                                 SettingsGroup(rowCount = 3) { index, position ->
                                     when (index) {
                                         0 -> SettingsActionCard(
@@ -563,7 +563,7 @@ fun SettingsScreen(
 
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("Accounts")
+                                SectionLabel(stringResource(R.string.settings_label_accounts))
                                 SettingsGroup(rowCount = 3) { index, position ->
                                     when (index) {
                                         0 -> SettingsActionCard(
@@ -609,7 +609,7 @@ fun SettingsScreen(
                         if (JamRepository.isEnabled) {
                             item {
                                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                    SectionLabel("Listen together")
+                                    SectionLabel(stringResource(R.string.settings_label_listen_together))
                                     SettingsGroup(rowCount = 1) { _, position ->
                                         SettingsActionCard(
                                             icon = Icons.Filled.Group,
@@ -631,7 +631,7 @@ fun SettingsScreen(
 
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("App")
+                                SectionLabel(stringResource(R.string.settings_label_app))
                                 SettingsGroup(rowCount = if (AppUpdateManager.isEnabled) 3 else 2) { index, position ->
                                     when (if (AppUpdateManager.isEnabled) index else index + 1) {
                                         0 -> CheckUpdatesRow(
@@ -848,7 +848,7 @@ fun SettingsScreen(
 
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel("Output and loudness")
+                    SectionLabel(stringResource(R.string.settings_label_output))
                     val clarityPreset = remember(misc.clarityPreset) { ClarityPresets.fromIndex(misc.clarityPreset) }
                     val loudnessSubtitle = when (loudness.mode) {
                         LoudnessMode.TRACK -> "Per song"
@@ -1571,7 +1571,7 @@ fun SettingsScreen(
         }
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("Liked songs")
+                                SectionLabel(stringResource(R.string.settings_label_liked))
                                 val likedLocalSync by viewModel.likedSongsLocalSync.collectAsStateWithLifecycle()
                                 val likedYouTubeSync by viewModel.likedSongsYouTubeSync.collectAsStateWithLifecycle()
                                 SettingsGroup(rowCount = 2) { index, position ->
@@ -1612,7 +1612,7 @@ fun SettingsScreen(
                     SettingsTab.SPOTIFY -> {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("Spotify")
+                                SectionLabel(stringResource(R.string.settings_label_spotify))
                                 SettingsGroup(rowCount = 2) { index, position ->
                                     when (index) {
                                         0 -> if (spotifyConnected) {
@@ -1651,7 +1651,7 @@ fun SettingsScreen(
 
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("Advanced")
+                                SectionLabel(stringResource(R.string.settings_label_advanced))
                                 SettingsGroup(rowCount = 1) { _, position ->
                                     SettingsActionCard(
                                         icon = Icons.Filled.Key,
@@ -1671,7 +1671,7 @@ fun SettingsScreen(
                     SettingsTab.LAST_FM -> {
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel("Scrobbling")
+                    SectionLabel(stringResource(R.string.settings_label_scrobbling))
                     // Last.fm is optional here — never a gate. Connected:
                     // global scrobbles + stats sync. Disconnected: Stats and
                     // recommendations run local-first from Room.
@@ -1726,7 +1726,7 @@ fun SettingsScreen(
                     SettingsTab.LIBRARY -> {
                         item {
                             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                                SectionLabel("Home")
+                                SectionLabel(stringResource(R.string.settings_label_home))
                                 SettingsGroup(rowCount = 2) { index, position ->
                                     when (index) {
                                         0 -> SettingsActionCard(

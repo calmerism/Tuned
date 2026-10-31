@@ -57,7 +57,6 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -971,9 +970,13 @@ internal fun NowPlayingTrackInfo(
             val splitArtists = remember(track.artist) {
                 com.tuned.app.util.ArtistHelper.splitArtists(track.artist)
             }
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(0.dp),
-                verticalArrangement = Arrangement.spacedBy(2.dp),
+            // One line that scrolls like the title, each name still its own tap target.
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .marqueeEdgeFade(20.dp)
+                    .basicMarquee(iterations = Int.MAX_VALUE),
             ) {
                 splitArtists.forEachIndexed { index, artName ->
                     Text(

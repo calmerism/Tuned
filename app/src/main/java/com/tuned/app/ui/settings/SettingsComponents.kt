@@ -10,6 +10,7 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
+import androidx.compose.material.icons.rounded.WarningAmber
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -698,5 +699,41 @@ internal fun SettingsRadioOption(
             style = MaterialTheme.typography.bodyMedium,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.SemiBold,
         )
+    }
+}
+
+/**
+ * Above the bit-perfect and USB settings: they send audio past Android's own volume handling,
+ * straight to a DAC or a pair of USB earphones, so a wrong setting reaches someone's ears.
+ */
+@Composable
+internal fun AdvancedAudioWarning() {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(com.tuned.app.ui.theme.AppShape.lg)
+            .background(MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.55f))
+            .padding(com.tuned.app.ui.theme.Space.lg),
+        verticalAlignment = Alignment.Top,
+    ) {
+        Icon(
+            imageVector = Icons.Rounded.WarningAmber,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onErrorContainer,
+            modifier = Modifier.size(com.tuned.app.ui.theme.Sizes.iconRow),
+        )
+        Spacer(Modifier.width(com.tuned.app.ui.theme.Space.md))
+        Column(verticalArrangement = Arrangement.spacedBy(com.tuned.app.ui.theme.Space.xxs)) {
+            Text(
+                text = stringResource(R.string.settings_bitperfect_warning_title),
+                style = com.tuned.app.ui.theme.AppType.bodyStrong,
+                color = MaterialTheme.colorScheme.onErrorContainer,
+            )
+            Text(
+                text = stringResource(R.string.settings_bitperfect_warning_body),
+                style = com.tuned.app.ui.theme.AppType.bodyS,
+                color = MaterialTheme.colorScheme.onErrorContainer.copy(alpha = 0.85f),
+            )
+        }
     }
 }

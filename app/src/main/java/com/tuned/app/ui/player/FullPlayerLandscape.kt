@@ -21,7 +21,6 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -426,9 +425,9 @@ internal fun FullPlayerLandscape(
                     val splitArtists = remember(track.artist) {
                         com.tuned.app.util.ArtistHelper.splitArtists(track.artist)
                     }
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(0.dp),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().basicMarquee(iterations = Int.MAX_VALUE),
                     ) {
                         splitArtists.forEachIndexed { index, artName ->
                             Text(

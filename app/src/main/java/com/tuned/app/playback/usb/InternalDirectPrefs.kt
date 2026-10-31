@@ -35,11 +35,15 @@ object InternalDirectPrefs {
         context.applicationContext.internalDirectDataStore.edit { it[KEY_ENABLED] = enabled }
     }
 
-    /** True = never use the DAC's hardware (Feature Unit) volume in USB exclusive mode. */
+    /**
+     * True = never use the DAC's hardware (Feature Unit) volume in USB exclusive mode. On by
+     * default: some DACs (FiiO JD1) report their master volume as set while their channel
+     * controls play at full, which hit people's ears at full scale.
+     */
     fun forceSoftwareVolumeFlow(context: Context): Flow<Boolean> =
         context.applicationContext.internalDirectDataStore.data
             .catch { emit(emptyPreferences()) }
-            .map { it[KEY_FORCE_SOFTWARE_VOLUME] == true }
+            .map { it[KEY_FORCE_SOFTWARE_VOLUME] != false }
 
     suspend fun setForceSoftwareVolume(context: Context, enabled: Boolean) {
         context.applicationContext.internalDirectDataStore.edit { it[KEY_FORCE_SOFTWARE_VOLUME] = enabled }

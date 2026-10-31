@@ -443,8 +443,11 @@
     <string name="settings_internal_direct_off">Off</string>
     <string name="settings_internal_direct_inactive">Not active here</string>
     <string name="settings_internal_direct_enabled_toast">Direct output on, and Bit-perfect with it</string>
+    <string name="settings_section_bitperfect">Bit-perfect and USB</string>
+    <string name="settings_bitperfect_warning_title">Only change these if you know what they do</string>
+    <string name="settings_bitperfect_warning_body">They send audio straight to a USB DAC or USB earphones, past Android\'s own handling. Most people hear no difference, and a DAC that misbehaves can play much louder than expected. Turn your volume down before you try one, and leave them off if you\'re not sure.</string>
     <string name="settings_force_sw_volume">App volume for USB DACs</string>
-    <string name="settings_force_sw_volume_on">Tuned sets the volume; the DAC stays at full</string>
+    <string name="settings_force_sw_volume_on">Tuned sets the volume; the DAC keeps its own level</string>
     <string name="settings_force_sw_volume_off">Uses the DAC\'s own volume when it has one</string>
     <string name="signal_detail_internal_mixer_direct_track">Bypassed\nAndroid granted a DIRECT output (no mixing, no resampling)</string>
     <string name="signal_detail_internal_mixer_direct_unverified">Direct output requested\nAndroid did not confirm it</string>
@@ -1595,5 +1598,20 @@
     <string name="common_clear_search">Clear search</string>
     <string name="recap_top_song">Your top song</string>
     <string name="recap_top_artist">Your top artist</string>
+    <string name="recap_play_top">Play top songs</string>
+    <string name="recap_chart_minutes">%1$s min</string>
+    <string name="recap_chart_spread">%1$s, %2$s</string>
+    <string name="recap_story_intro">Your year in music</string>
+    <string name="recap_story_listened">You listened for</string>
+    <string name="recap_story_minutes">minutes</string>
+    <string name="recap_story_spread">across %1$s and %2$s</string>
+    <string name="recap_story_top_songs">Your top songs</string>
+    <string name="recap_story_top_artists">Your top artists</string>
+    <string name="recap_story_outro">That was your %1$d</string>
+    <string name="recap_story_again">Watch again</string>
+    <string name="recap_story_play">Play</string>
+    <string name="recap_story_close">Close recap</string>
+    <plurals name="recap_stat_songs"><item quantity="one">song</item><item quantity="other">songs</item></plurals>
+    <plurals name="recap_stat_artists"><item quantity="one">artist</item><item quantity="other">artists</item></plurals>
     <string name="local_albums">Albums</string>
 </resources>

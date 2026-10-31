@@ -14,7 +14,7 @@
 - **Sing:** lowers the vocals from the lyrics screen. It's a rough reducer, so centred instruments dip too.
 - **Lyrics:** duets, background vocals, and one translate and pronounce button.
 - **AutoPlay toggle** in the queue, and **Music Haptics**.
-- **Yearly recap** on the You tab: minutes listened, top song, top artists, with a share card. Counting starts from your all-time plays, so the first year is approximate.
+- **Yearly recap** on the You tab: minutes listened, then your top songs and artists ranked by time. Counting starts from your all-time plays, so the first year is approximate.
 - **Pins:** pin songs, albums and artists from their menus; they sit at the top of Library with Liked Songs. Long-press to unpin.
 - **Local albums:** songs on the phone group into albums by tag or folder, each with its own page, and folder chips filter the list when you have more than one folder.
 - **YouTube Music links** open the album, playlist or artist in Tuned instead of playing straight away; a song link inside a playlist plays from that song.
@@ -36,6 +36,11 @@
 - **You tab** play counts come from what you actually played.
 - **Album tracks** only show artists who aren't already in the album's credit.
 - **Other versions** uses YouTube Music's own list of editions.
+- **App icon:** a light icon for light mode and a dark one for dark mode, each with a subtle gradient.
+- **Player:** a long list of artists scrolls on one line like the title, instead of wrapping.
+- **Settings:** bit-perfect, USB exclusive, internal direct output and USB volume have their own section, with a warning to change them only if you know what they do.
+- **Widgets** fill the space the launcher gives them and can be resized.
+- **USB exclusive** sets the volume in software by default and leaves the DAC's own volume alone; every session fades in.
 
 ### Fixed
 - Closing the app now stops the music.
@@ -56,6 +61,10 @@
 - Player colours not updating between songs from the same album.
 - A blank screen after pressing back, seeking in downloaded songs, a USB freeze and a search crash.
 - The Taste strip ignoring its Home toggle.
+- Volume jumping to full on bit-perfect output with EQ or effects on, when bit-perfect was switched on mid-song, or when a DAC was plugged in while playing.
+- A burst at full volume at the end of songs on direct output, and fades starting loud on exclusive USB.
+- USB earphones with a built-in DAC, such as the FiiO JD1, playing at full volume when bit-perfect was on.
+- No sound after turning bit-perfect off while a song played.
 
 ## [0.1.0]
 

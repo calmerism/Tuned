@@ -82,7 +82,13 @@ class ExclusiveUsbOutput @Inject constructor(
     @Volatile private var lastNonMaxListeningGain = Float.NaN
     @Volatile private var ignoreStreamMusicMax = false
     /** Fork setting: never let the DAC's Feature Unit own the listening level. */
-    @Volatile private var forceSoftwareVolume = false
+    @Volatile private var forceSoftwareVolume = true
+    /**
+     * Safety net: every session fades in over [START_RAMP_US] of audio, so a DAC whose volume
+     * misbehaves rises gently instead of starting at full scale in someone's ears.
+     */
+    @Volatile private var rampPending = false
+    @Volatile private var rampStartUs = 0L
 
     private val sessionBlockedDevices = java.util.concurrent.ConcurrentHashMap<String, String>()
     @Volatile private var currentDeviceKey: String? = null
@@ -158,19 +164,19 @@ class ExclusiveUsbOutput @Inject constructor(
 
     /**
      * Software (PCM-scaled) volume instead of the DAC's hardware Feature Unit.
-     * Switching to software parks the hardware level at 0 dB first so the two
-     * attenuations never stack. Switching back takes effect at the next start.
+     * Switching to software puts the hardware level back where the DAC had it,
+     * never at 0 dB. Switching back takes effect at the next start.
      */
     fun setForceSoftwareVolume(value: Boolean) {
         synchronized(lock) {
             if (forceSoftwareVolume == value) return
             forceSoftwareVolume = value
             if (value && active && hardwareVolume) {
-                runCatching { featureVolume?.setNormalized(1f) }
+                runCatching { featureVolume?.restoreOriginal() }
                 hardwareVolume = false
                 lastAppliedCombined = Float.NaN
                 applyVolumeLocked()
-                Log.i(TAG, "volume forced to software; Feature Unit parked at 0 dB")
+                Log.i(TAG, "volume forced to software; Feature Unit back at the DAC's own level")
             }
         }
     }
@@ -384,7 +390,12 @@ class ExclusiveUsbOutput @Inject constructor(
             startMediaTimeNeedsInit = false
         }
         recheckClockLocked()
-        val gain = softwareGain()
+        if (rampPending) {
+            rampStartUs = presentationTimeUs
+            rampPending = false
+        }
+        val ramp = ((presentationTimeUs - rampStartUs).toFloat() / START_RAMP_US).coerceIn(0f, 1f)
+        val gain = softwareGain() * ramp * ramp
         val chunk = if (isFloatBuffer) {
             val floats = FloatArray(size / Float.SIZE_BYTES)
             buffer.order(ByteOrder.LITTLE_ENDIAN).asFloatBuffer().get(floats)
@@ -454,6 +465,8 @@ class ExclusiveUsbOutput @Inject constructor(
      * clock and make the sink position jump back to the beginning.
      */
     fun restartIfStopped(): Boolean {
+        // Stopped on purpose (switched off, DAC handed back): never bring it back from here.
+        if (!wanted) return false
         val running = stream ?: return false
         if (running.isAlive) return false
         if (!running.start()) return false
@@ -701,6 +714,7 @@ class ExclusiveUsbOutput @Inject constructor(
         active = true
         lastFailureReason = null
         paused = false
+        rampPending = true
         pendingVolume = 1f
         startMediaTimeNeedsInit = true
         startMediaTimeUs = 0L
@@ -983,6 +997,8 @@ class ExclusiveUsbOutput @Inject constructor(
     }
 
     private fun teardownLocked(closeDevice: Boolean) {
+        // Hand the DAC back at the level it had, so Android's own playback isn't louder after.
+        if (hardwareVolume) runCatching { featureVolume?.restoreOriginal() }
         stopStreamLocked()
         if (closeDevice) {
             runCatching { usbAudio.closeDevice() }
@@ -1143,6 +1159,9 @@ internal fun attachMaxPinFallbackGain(streamGain: Float, rememberedGain: Float):
 
 /** With no level to go on, a pinned reading must not mean full scale in someone's ears. */
 internal const val FIRST_ATTACH_GAIN = 0.3f
+
+/** How long each exclusive session takes to fade in from silence. */
+private const val START_RAMP_US = 1_200_000L
 
 /** Raw readings at/above this are the attach-time pin, not a chosen level. */
 private const val ATTACH_MAX_PIN_GAIN = 0.999f

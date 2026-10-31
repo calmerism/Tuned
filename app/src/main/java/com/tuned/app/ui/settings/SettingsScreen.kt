@@ -693,9 +693,9 @@ fun SettingsScreen(
 
                     val isIgnored = BatteryOptimizationHelper.isIgnoringBatteryOptimizations(context)
                     val totalAudioRows = if (misc.crossfadeEnabled) {
-                        if (isIgnored) 7 else 8
-                    } else {
                         if (isIgnored) 6 else 7
+                    } else {
+                        if (isIgnored) 5 else 6
                     }
                     SettingsGroup(rowCount = totalAudioRows) { index, position ->
                         when (index) {
@@ -720,21 +720,6 @@ fun SettingsScreen(
                                 isHighlighted = (highlightedSettingId == "audio.download_quality"),
                             )
                             2 -> SettingsToggleCard(
-                                icon = Icons.Filled.Tune,
-                                iconContainer = MaterialTheme.colorScheme.primaryContainer,
-                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
-                                title = stringResource(R.string.settings_bit_perfect),
-                                subtitle = if (misc.isBitPerfectEnabled) {
-                                    stringResource(R.string.settings_bit_perfect_on_detail)
-                                } else {
-                                    stringResource(R.string.settings_bit_perfect_off_detail)
-                                },
-                                checked = misc.isBitPerfectEnabled,
-                                onCheckedChange = viewModel::setBitPerfectEnabled,
-                                position = position,
-                                isHighlighted = (highlightedSettingId == "audio.bit_perfect"),
-                            )
-                            3 -> SettingsToggleCard(
                                 icon = Icons.Filled.GraphicEq,
                                 iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -750,7 +735,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.crossfade"),
                             )
-                            4 -> if (misc.crossfadeEnabled) {
+                            3 -> if (misc.crossfadeEnabled) {
                                 CrossfadeDurationRow(
                                     seconds = misc.crossfadeSeconds,
                                     onSecondsChange = viewModel::setCrossfadeSeconds,
@@ -772,7 +757,7 @@ fun SettingsScreen(
                                     isHighlighted = (highlightedSettingId == "audio.keep_lyrics_screen_awake"),
                                 )
                             }
-                            5 -> if (misc.crossfadeEnabled) {
+                            4 -> if (misc.crossfadeEnabled) {
                                 SettingsToggleCard(
                                     icon = Icons.Filled.Lyrics,
                                     iconContainer = MaterialTheme.colorScheme.secondaryContainer,
@@ -801,7 +786,7 @@ fun SettingsScreen(
                                     isHighlighted = (highlightedSettingId == "audio.download_lyrics"),
                                 )
                             }
-                            6 -> if (misc.crossfadeEnabled) {
+                            5 -> if (misc.crossfadeEnabled) {
                                 SettingsToggleCard(
                                     icon = Icons.Filled.Lyrics,
                                     iconContainer = MaterialTheme.colorScheme.secondaryContainer,
@@ -829,7 +814,7 @@ fun SettingsScreen(
                                     isHighlighted = (highlightedSettingId == "audio.battery_optimization"),
                                 )
                             }
-                            7 -> if (!isIgnored) {
+                            6 -> if (!isIgnored) {
                                 SettingsActionCard(
                                     icon = Icons.Filled.Bolt,
                                     iconContainer = MaterialTheme.colorScheme.errorContainer,
@@ -848,16 +833,26 @@ fun SettingsScreen(
 
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    SectionLabel(stringResource(R.string.settings_label_output))
-                    val clarityPreset = remember(misc.clarityPreset) { ClarityPresets.fromIndex(misc.clarityPreset) }
-                    val loudnessSubtitle = when (loudness.mode) {
-                        LoudnessMode.TRACK -> "Per song"
-                        LoudnessMode.ALBUM -> "Per album"
-                        else -> "Off"
-                    }
-                    SettingsGroup(rowCount = 10) { index, position ->
+                    SectionLabel(stringResource(R.string.settings_section_bitperfect))
+                    AdvancedAudioWarning()
+                    SettingsGroup(rowCount = 4) { index, position ->
                         when (index) {
                             0 -> SettingsToggleCard(
+                                icon = Icons.Filled.Tune,
+                                iconContainer = MaterialTheme.colorScheme.primaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
+                                title = stringResource(R.string.settings_bit_perfect),
+                                subtitle = if (misc.isBitPerfectEnabled) {
+                                    stringResource(R.string.settings_bit_perfect_on_detail)
+                                } else {
+                                    stringResource(R.string.settings_bit_perfect_off_detail)
+                                },
+                                checked = misc.isBitPerfectEnabled,
+                                onCheckedChange = viewModel::setBitPerfectEnabled,
+                                position = position,
+                                isHighlighted = (highlightedSettingId == "audio.bit_perfect"),
+                            )
+                            1 -> SettingsToggleCard(
                                 icon = Icons.Filled.Usb,
                                 iconContainer = MaterialTheme.colorScheme.primaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
@@ -874,7 +869,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.usb_exclusive"),
                             )
-                            1 -> {
+                            2 -> {
                                 // Probe what this output accepts only once the row is on screen.
                                 LaunchedEffect(Unit) { viewModel.refreshInternalDirectAvailability() }
                                 SettingsToggleCard(
@@ -901,7 +896,7 @@ fun SettingsScreen(
                                 isHighlighted = (highlightedSettingId == "audio.internal_direct"),
                             )
                             }
-                            2 -> SettingsToggleCard(
+                            3 -> SettingsToggleCard(
                                 icon = Icons.Filled.VolumeUp,
                                 iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -916,7 +911,23 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.force_software_volume"),
                             )
-                            3 -> SettingsActionCard(
+                        }
+                    }
+                }
+            }
+
+                        item {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    SectionLabel(stringResource(R.string.settings_label_output))
+                    val clarityPreset = remember(misc.clarityPreset) { ClarityPresets.fromIndex(misc.clarityPreset) }
+                    val loudnessSubtitle = when (loudness.mode) {
+                        LoudnessMode.TRACK -> "Per song"
+                        LoudnessMode.ALBUM -> "Per album"
+                        else -> "Off"
+                    }
+                    SettingsGroup(rowCount = 7) { index, position ->
+                        when (index) {
+                            0 -> SettingsActionCard(
                                 icon = Icons.Filled.VolumeUp,
                                 iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -926,7 +937,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.loudness_normalization"),
                             )
-                            4 -> SettingsActionCard(
+                            1 -> SettingsActionCard(
                                 icon = Icons.Filled.GraphicEq,
                                 iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -942,7 +953,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.equalizer"),
                             )
-                            5 -> SettingsToggleCard(
+                            2 -> SettingsToggleCard(
                                 icon = Icons.Filled.VolumeUp,
                                 iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -957,7 +968,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.system_audio_effects"),
                             )
-                            6 -> SettingsToggleCard(
+                            3 -> SettingsToggleCard(
                                 icon = Icons.Filled.Waves,
                                 iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -972,7 +983,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.studio_clarity"),
                             )
-                            7 -> SettingsActionCard(
+                            4 -> SettingsActionCard(
                                 icon = Icons.Filled.Tune,
                                 iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
@@ -986,7 +997,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.clarity_preset"),
                             )
-                            8 -> SettingsToggleCard(
+                            5 -> SettingsToggleCard(
                                 icon = Icons.Filled.GraphicEq,
                                 iconContainer = MaterialTheme.colorScheme.secondaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
@@ -1001,7 +1012,7 @@ fun SettingsScreen(
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.clarity_spatial_bypass"),
                             )
-                            9 -> SettingsActionCard(
+                            6 -> SettingsActionCard(
                                 icon = Icons.Filled.Headphones,
                                 iconContainer = MaterialTheme.colorScheme.primaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onPrimaryContainer,

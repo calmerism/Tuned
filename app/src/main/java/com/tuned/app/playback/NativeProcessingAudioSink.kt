@@ -204,6 +204,8 @@ class NativeProcessingAudioSink(
             inputStage?.configure(format.sampleRate, format.channelCount, format.pcmEncoding)
         }
 
+        // A session switched off while no buffers flowed: it ends with this configure.
+        if (usbExclusive && !exclusiveWanted) leaveExclusiveUsb(configureAndroid = false)
         if (exclusiveWanted && internalDirect?.hasOpenStream() == true) {
             // A direct AudioTrack left open on the DAC by the previous item
             // keeps snd-usb-audio busy and would make the usbdevfs claim fail.
@@ -491,6 +493,10 @@ class NativeProcessingAudioSink(
             rerouteForTempo()
         }
         val buffer = writableBuffer(decoded)
+        // Exclusive was switched off (bit-perfect off, DAC handed back): leave it here, on the
+        // playback thread. Doing it from the main thread reconfigured the Android sink while
+        // this thread was writing to it, and playback died with no sound.
+        if (usbExclusive && !exclusiveWanted) leaveExclusiveUsb(configureAndroid = true)
         maybeAdoptExclusiveUsb()
         maybeAdoptInternalDirect()
         // Once per payload: Media3 resubmits the same buffer until it is consumed.
@@ -627,7 +633,10 @@ class NativeProcessingAudioSink(
         encodedAccessUnitCount: Int,
     ): Boolean {
         val gain = lastVolume * bypassSystemGain()
-        val needsGain = bitPerfectRequested && bitPerfectAtConfigure && hasConfigured &&
+        // The compatibility fallback (format not openable direct) can still be granted the
+        // bypass, so a held bypass needs the gain too, not only a bit-perfect configure.
+        val bypassed = (bitPerfectRequested && bitPerfectAtConfigure) || usbOutput?.holdsBypass() == true
+        val needsGain = bypassed && hasConfigured &&
             gain < 1f - 1e-6f && gain >= 0f && buffer.hasRemaining()
         if (!needsGain) {
             lastGainBuffer = null
@@ -727,6 +736,13 @@ class NativeProcessingAudioSink(
             processor.queueInput(buffer.duplicate())
             pendingInputLimit = buffer.limit()
             val output = processor.getOutput()
+            // EQ, DSP or a format change still asks for the USB mixer bypass, and a granted
+            // bypass ignores both AudioTrack volume and the media volume: without this the
+            // DAC plays processed audio at full scale. Scaled once, as each output is made.
+            val gain = processedBypassGain()
+            if (gain < 1f - 1e-6f && gain >= 0f && output.hasRemaining() && !output.isReadOnly) {
+                scalePcmInPlace(output, output.position(), output.limit(), C.ENCODING_PCM_FLOAT, gain)
+            }
             pendingOutput = output
             pendingPresentationTimeUs = presentationTimeUs
             pendingAccessUnitCount = encodedAccessUnitCount
@@ -917,9 +933,9 @@ class NativeProcessingAudioSink(
         exclusiveWanted = wanted
         if (wanted && !wasWanted) {
             exclusiveStartFailed = false
-        } else if (!wanted && usbExclusive) {
-            leaveExclusiveUsb(configureAndroid = hasConfigured && configuredFormat != null)
         }
+        // Turning it off only flags it: the playback thread leaves on its next buffer or
+        // configure (see handleBuffer), never this thread.
     }
 
     fun notifyExclusiveUsbMayStart() {
@@ -1147,12 +1163,17 @@ class NativeProcessingAudioSink(
             }
             pendingInternalFloat = null
         }
+        // The song's last converted frames get the same gain as the rest, or they end at full scale.
+        val gain = lastVolume * internalUsbSystemGain(output)
         runCatching {
             processor.queueEndOfStream()
             var guard = 0
             while (guard++ < 16) {
                 val out = processor.getOutput()
                 if (out === AudioProcessor.EMPTY_BUFFER || !out.hasRemaining()) break
+                if (gain < 1f - 1e-6f && gain >= 0f && !out.isReadOnly) {
+                    scalePcmInPlace(out, out.position(), out.limit(), C.ENCODING_PCM_FLOAT, gain)
+                }
                 if (!output.write(out, pendingInternalPtsUs, C.ENCODING_PCM_FLOAT, converterChannels)) break
             }
         }
@@ -1230,6 +1251,9 @@ class NativeProcessingAudioSink(
             clearExclusiveConverter()
         }
         enterExclusiveUsb()
+        // A new exclusive session starts at full app volume; a fade-in or duck already in
+        // progress must carry over, or the song starts loud.
+        exclusiveUsb?.setVolume(lastVolume)
         processingActive = false
         processedFormat = null
         lastGainBuffer = null
@@ -1507,8 +1531,13 @@ class NativeProcessingAudioSink(
         usbExclusive -> exclusiveUsb?.softwareGain() ?: lastVolume
         internalActive -> internalDirect?.let { lastVolume * internalUsbSystemGain(it) } ?: lastVolume
         bitPerfectRequested && bitPerfectAtConfigure -> lastVolume * bypassSystemGain()
+        usbOutput?.holdsBypass() == true -> processedBypassGain()
         else -> lastVolume
     }
+
+    /** App volume times the media volume while Android bypasses its mixer for processed audio, else unity. */
+    private fun processedBypassGain(): Float =
+        if (usbOutput?.holdsBypass() == true) lastVolume * (systemVolume?.linear ?: 1f) else 1f
 
     /** The media volume while Android has granted the mixer bypass, else unity: Android applies it. */
     private fun bypassSystemGain(): Float =

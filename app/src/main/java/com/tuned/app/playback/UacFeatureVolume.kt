@@ -26,6 +26,7 @@ class UacFeatureVolume(
     private var minRaw: Int = DEFAULT_MIN_RAW
     private var maxRaw: Int = DEFAULT_MAX_RAW
     private var resRaw: Int = DEFAULT_RES_RAW
+    private var originalRaw: Int? = null
 
     fun attach(): Boolean {
         available = false
@@ -41,6 +42,7 @@ class UacFeatureVolume(
             if (verifiedChannels.isEmpty()) continue
             featureUnitId = id
             channels = verifiedChannels
+            originalRaw = verifiedChannels.asSequence().mapNotNull { readVolume(id, it) }.firstOrNull()
             available = true
             writeMute(id, false)
             Log.i(
@@ -53,6 +55,17 @@ class UacFeatureVolume(
         }
         Log.i(TAG, "No writable UAC Feature Unit volume control")
         return false
+    }
+
+    /** Puts the volume back where the DAC had it before [attach]. */
+    fun restoreOriginal(): Boolean {
+        val raw = originalRaw ?: return false
+        if (!available || featureUnitId == 0) return false
+        var ok = false
+        for (channel in channels) {
+            if (writeVolume(featureUnitId, channel, raw)) ok = true
+        }
+        return ok
     }
 
     fun setNormalized(volume: Float): Boolean {
@@ -187,10 +200,8 @@ class UacFeatureVolume(
         // In UAC 1.0 & 2.0, Master channel controls the entire cluster globally.
         // Using Channel 0 guarantees both stereo channels stay perfectly balanced.
         if (0 in found && verifyChannelWritable(unitId, 0)) {
-            // Reset discrete channels 1 (Left) and 2 (Right) trims to unity gain (0 dB / maxRaw)
-            // to ensure no residual attenuation or channel imbalance exists from previous tests or state.
-            if (1 in found) writeVolume(unitId, 1, maxRaw)
-            if (2 in found) writeVolume(unitId, 2, maxRaw)
+            // Left and right are left as the DAC has them. Forcing them to 0 dB played the
+            // FiiO JD1 at full scale: its master read back as set but didn't attenuate.
             return intArrayOf(0)
         }
 

@@ -63,11 +63,11 @@ internal object WidgetViews {
     fun build(context: Context, appWidgetId: Int, style: WidgetStyle, progressOverride: Float? = null): RemoteViews {
         val views = RemoteViews(context.packageName, layoutFor(style))
         val (cellW, cellH) = sizeDp(context, appWidgetId, style)
-        // The card keeps the reference's proportions inside the launcher's cell: square for
-        // the 2x2 widgets, about 2.1:1 for the 4x2 ones. The rest of the cell stays clear.
+        // The 2x2 widgets stay square; the 4x2 ones fill their whole cell, like the launcher's
+        // own widgets. A fixed 2.1:1 card left a band empty on launchers with taller cells.
         val (w, h) = when (style) {
             WidgetStyle.FULL_COVER, WidgetStyle.SMALL -> minOf(cellW, cellH).let { it to it }
-            WidgetStyle.MEDIUM, WidgetStyle.WIDE -> cellW to minOf(cellH, (cellW / 2.1f).toInt())
+            WidgetStyle.MEDIUM, WidgetStyle.WIDE -> cellW to cellH
         }
         val d = context.resources.displayMetrics.density
         val padX = ((cellW - w) / 2f * d).toInt()
@@ -146,14 +146,17 @@ internal object WidgetViews {
                 textDp = widthDp - 32f
             }
             WidgetStyle.MEDIUM -> {
-                val side = heightDp - 32f
+                // Square, but never so wide the text loses its half of the card.
+                val side = minOf(heightDp - 32f, (widthDp - 16f) * 0.45f)
                 artW = px(side); artH = artW
                 textDp = widthDp - 16f - side - 32f
             }
             WidgetStyle.WIDE -> {
-                // The cover is a full-height square on the left, edge to edge.
-                artW = hPx; artH = hPx
-                textDp = widthDp - heightDp - 32f
+                // The cover fills the left edge to edge: square when the card is wide enough,
+                // cropped narrower on a tall cell so the text keeps over half of the card.
+                val coverDp = minOf(heightDp.toFloat(), widthDp * 0.45f)
+                artW = px(coverDp); artH = hPx
+                textDp = widthDp - coverDp - 32f
             }
         }
         if (artW > 0) {

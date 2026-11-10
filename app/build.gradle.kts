@@ -315,7 +315,7 @@ dependencies {
 
     // Low-latency native output. Version 1.10 remains API-compatible with the
     // requested Oboe 1.8+ baseline and exposes its CMake target through Prefab.
-    implementation("com.google.oboe:oboe:1.10.0")
+    implementation("com.google.oboe:oboe:1.11.0")
 
     // Metadata/search remains local InnerTube/NewPipe functionality; playback
     // resolves through InnerTubeX first and retains NewPipe as a fallback.

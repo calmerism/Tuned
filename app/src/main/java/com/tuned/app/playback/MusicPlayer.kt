@@ -60,6 +60,7 @@ import com.tuned.app.data.discover.DiscoverRepository
 import com.tuned.app.data.generate.GeneratedTrack
 import com.tuned.app.data.generate.youtubeVideoIdOrNull
 import com.tuned.app.data.local.MiscSettings
+import com.tuned.app.data.local.forNetwork
 import com.tuned.app.data.local.EqualizerPreferences
 import com.tuned.app.data.local.SettingsPreferences
 import com.tuned.app.data.local.db.DownloadedTrackEntity
@@ -170,7 +171,7 @@ internal data class PersistedPlaybackSession(
     val durationMs: Long = 0L,
 )
 
-private const val SONG_VERSION_LOOKUP_MS = 2_500L
+private const val SONG_VERSION_LOOKUP_MS = 4_000L
 private const val CAST_VOLUME_STEP = 0.05f
 private const val BEAT_LOCK_CHECK_MS = 1_000L
 private const val BEAT_LOCK_UNTIL = 0.6f
@@ -291,6 +292,13 @@ class MusicPlayer @Inject constructor(
     private val autoEqController: com.tuned.app.data.autoeq.AutoEqController,
 ) {
     private val appContext = context.applicationContext
+    @Volatile private var skipSilencePref = false
+
+    /** True on mobile data, where streaming quality can be set apart from Wi-Fi. */
+    private fun onMobileData(): Boolean = runCatching {
+        val cm = appContext.getSystemService(Context.CONNECTIVITY_SERVICE) as android.net.ConnectivityManager
+        cm.getNetworkCapabilities(cm.activeNetwork)?.hasTransport(android.net.NetworkCapabilities.TRANSPORT_CELLULAR) == true
+    }.getOrDefault(false)
     /**
      * Playback resolver is the only path allowed to publish a YouTube URL for
      * the selected track. Prefetch may fill the next track's cache entry and
@@ -1569,6 +1577,7 @@ class MusicPlayer @Inject constructor(
             )
             .setLoadControl(baseLoadControl)
             .build().apply {
+                skipSilenceEnabled = skipSilencePref && !bitPerfectEnabled
                 // Feed ReplayGain container tags into loudness normalization.
                 // Additive listener: never touches playback, 0 dB without tags.
                 addAnalyticsListener(object : androidx.media3.exoplayer.analytics.AnalyticsListener {
@@ -2032,6 +2041,8 @@ class MusicPlayer @Inject constructor(
                     _state.update { it.copy(vocalsAvailable = !settings.isBitPerfectEnabled) }
                 }
                 systemEffectsModePref = settings.systemEffectsMode
+                skipSilencePref = settings.skipSilenceEnabled
+                if (playerDelegate.isInitialized()) onMain { player.skipSilenceEnabled = skipSilencePref && !bitPerfectEnabled }
                 updateBitPerfectState()
                 recomputeUsbExclusivePref()
                 if (bitPerfectEnabled && settings.isStudioMasterClarityEnabled) {
@@ -5106,7 +5117,7 @@ class MusicPlayer @Inject constructor(
         warmArtwork(nextTrack)
         preloadJob?.cancel()
         preloadJob = applicationScope.launch(Dispatchers.IO) {
-            val misc = runCatching { settingsPreferences.settings.first() }.getOrDefault(MiscSettings())
+            val misc = runCatching { settingsPreferences.settings.first() }.getOrDefault(MiscSettings()).forNetwork(onMobileData())
             val wantLossless = misc.preferLosslessStreaming &&
                 misc.losslessQuality != LosslessMusicApi.QUALITY_YOUTUBE &&
                 !losslessMusicApi.isCoolingDown
@@ -6745,7 +6756,7 @@ class MusicPlayer @Inject constructor(
         // 2. 5-second lossless window for first/interactive track. Recovery
         // paths pass LosslessBudget.Disabled so the module chain never delays
         // the stream that has to replace a dead one.
-        val misc = runCatching { settingsPreferences.settings.first() }.getOrDefault(MiscSettings())
+        val misc = runCatching { settingsPreferences.settings.first() }.getOrDefault(MiscSettings()).forNetwork(onMobileData())
         val wantLossless = allowLossless &&
             misc.preferLosslessStreaming &&
             misc.losslessQuality != LosslessMusicApi.QUALITY_YOUTUBE &&
@@ -7351,7 +7362,7 @@ class MusicPlayer @Inject constructor(
             android.util.Log.i("MusicPlayer", "[STREAM UPGRADE] already running for '${track.title}'")
             return
         }
-        val misc = runCatching { runBlocking { settingsPreferences.settings.first() } }.getOrDefault(MiscSettings())
+        val misc = runCatching { runBlocking { settingsPreferences.settings.first() } }.getOrDefault(MiscSettings()).forNetwork(onMobileData())
         val wantLossless = misc.preferLosslessStreaming &&
             misc.losslessQuality != LosslessMusicApi.QUALITY_YOUTUBE
         if (!wantLossless || losslessMusicApi.isCoolingDown) {

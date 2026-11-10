@@ -1,5 +1,22 @@
 # Changelog
 
+## [2026.11] - 2026-11-10
+
+### Added
+- **ListenBrainz:** paste your user token in Settings and Tuned sends your listens there, alongside Last.fm.
+- **Skip silence:** skips quiet gaps in songs. Off in bit-perfect mode.
+- **Quality on mobile data:** a separate streaming quality for when you're off Wi-Fi.
+- **Video covers:** when a video plays as audio, its frame can show square or whole at 16:9, in the player and the mini player.
+- **Translations:** all 14 languages now cover every screen.
+
+### Fixed
+- History, Quick picks, Jump back in and Heavy rotation showed saved playlists and liked songs. They now show what you played.
+- Songs can be added to mixes and other generated playlists.
+- Album tracks that have a music video now play the song's audio, and a track like "D.A.N.C.E. (WWW)" plays its own version.
+- "Other versions" opens the edition you tapped.
+- The player's colours follow each new song without reopening the player.
+- Streaming quality says when it needs an add-on, and the player's quality chip shows the format with its bitrate.
+
 ## [2026.10] - 2026-10-29
 
 ### Added

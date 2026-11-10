@@ -86,6 +86,7 @@ class SettingsViewModel @Inject constructor(
     private val sessionPreferences: SessionPreferences,
     private val themeRepository: ThemeRepository,
     private val settingsPreferences: SettingsPreferences,
+    private val listenBrainz: com.tuned.app.data.listenbrainz.ListenBrainzClient,
     private val audioEngine: dagger.Lazy<NativeAudioEngine>,
     private val generateRepository: GenerateRepository,
     private val discoverRepository: com.tuned.app.data.discover.DiscoverRepository,
@@ -517,6 +518,27 @@ class SettingsViewModel @Inject constructor(
     fun setDynamicNowPlaying(enabled: Boolean) = launchSettingsAction("update dynamic theme") { themeRepository.setDynamicNowPlaying(enabled) }
     fun setUseCustomFont(enabled: Boolean) = launchSettingsAction("update the app font") { settingsPreferences.setUseCustomFont(enabled) }
     fun setPreferLosslessStreaming(enabled: Boolean) = launchSettingsAction("update streaming preference") { settingsPreferences.setPreferLosslessStreaming(enabled) }
+    fun setSkipSilence(enabled: Boolean) = launchSettingsAction("update skip silence") { settingsPreferences.setSkipSilence(enabled) }
+    fun setMobileDataQuality(quality: Int) = launchSettingsAction("update mobile data quality") { settingsPreferences.setMobileDataQuality(quality) }
+
+    /** Saves the ListenBrainz token once ListenBrainz accepts it; blank disconnects. */
+    fun saveListenBrainzToken(token: String, accepted: String, refused: String, offline: String) {
+        viewModelScope.launch {
+            if (token.isBlank()) {
+                settingsPreferences.setListenBrainzToken("")
+                return@launch
+            }
+            when (listenBrainz.validate(token)) {
+                true -> {
+                    settingsPreferences.setListenBrainzToken(token)
+                    showToast(accepted)
+                }
+                false -> showToast(refused)
+                null -> showToast(offline)
+            }
+        }
+    }
+
     fun setLosslessQuality(quality: Int) = launchSettingsAction("update streaming quality") { settingsPreferences.setLosslessQuality(quality) }
     fun setDownloadQuality(quality: Int) = launchSettingsAction("update download quality") { settingsPreferences.setDownloadQuality(quality) }
     fun setStudioMasterClarity(enabled: Boolean) {

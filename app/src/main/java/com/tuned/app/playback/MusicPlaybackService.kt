@@ -95,6 +95,9 @@ private fun sameServiceState(previous: MusicPlayerState, current: MusicPlayerSta
 class MusicPlaybackService : MediaBrowserServiceCompat() {
     @Inject lateinit var musicPlayer: MusicPlayer
     @Inject lateinit var scrobbleRepository: ScrobbleRepository
+    @Inject lateinit var listenBrainz: com.tuned.app.data.listenbrainz.ListenBrainzClient
+    /** The play (by start time) already sent to ListenBrainz, so a Last.fm retry never repeats it. */
+    private var listenBrainzSentFor = 0L
     @Inject lateinit var scrobblerPreferences: ScrobblerPreferences
 
     @Inject lateinit var themeRepository: ThemeRepository
@@ -788,6 +791,7 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
         val key = "${cleanArtist.lowercase()}|${cleanTitle.lowercase()}"
         nowPlayingAnnouncedKey = key
         nowPlayingInFlight = true
+        scope.launch(Dispatchers.IO) { listenBrainz.playingNow(cleanArtist, cleanTitle, track.album) }
         scope.launch(Dispatchers.IO) {
             try {
                 val result = scrobbleRepository.updateNowPlaying(cleanArtist, cleanTitle, track.album)
@@ -878,6 +882,11 @@ class MusicPlaybackService : MediaBrowserServiceCompat() {
                 if (accumulatedMs < threshold) continue
 
                 submissionAttempted = true
+                if (listenBrainzSentFor != startedAtEpochSec) {
+                    listenBrainzSentFor = startedAtEpochSec
+                    val listenedAt = startedAtEpochSec
+                    scope.launch(Dispatchers.IO) { listenBrainz.listen(cleanArtist, cleanTitle, track.album, listenedAt) }
+                }
                 scope.launch(Dispatchers.IO) {
                     runCatching {
                         when (val result = scrobbleRepository.scrobble(

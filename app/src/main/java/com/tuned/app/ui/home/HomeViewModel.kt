@@ -482,10 +482,9 @@ class HomeViewModel @Inject constructor(
                 viewingUsername = username,
                 stats = local.stats,
                 nowPlaying = null,
-                // Local tracks carry no timestamps, so default to Most Played
-                // (Recent would filter everything out).
-                sortMode = HomeSortMode.MOST_PLAYED,
-                allTracks = local.topTracks,
+                // The play log has times, so history reads newest first like Last.fm's.
+                sortMode = HomeSortMode.RECENT,
+                allTracks = local.recentTracks,
                 topTracksOverall = local.topTracks,
                 topTracks7Days = emptyList(),
                 topTracks30Days = emptyList(),

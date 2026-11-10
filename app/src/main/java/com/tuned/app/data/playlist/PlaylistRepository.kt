@@ -81,6 +81,12 @@ private const val TAG = "PlaylistRepository"
     const val LEGACY_LIKED_SONGS_TITLE = "Liked Local Song"
 /** Built-in playlist holding audio files imported from the device. */
 const val LOCAL_SONGS_MODE = "local"
+
+/**
+ * Whether songs can be added by hand. Mixes, discover and genre playlists are the listener's own
+ * once saved; only Local songs (filled from folders) and YouTube Music's own copies are not.
+ */
+fun acceptsAddedSongs(mode: String): Boolean = mode != LOCAL_SONGS_MODE && mode != "youtube_remote"
 const val LOCAL_SONGS_TITLE = "Local songs"
 
 @Singleton
@@ -415,7 +421,7 @@ class PlaylistRepository @Inject constructor(
         return saveMutex.withLock {
             val entity = dao.getById(id) ?: return@withLock null
             val playlist = entity.toDomain()
-            if (playlist.mode != "custom" && playlist.mode != LIKED_SONGS_MODE) return@withLock playlist
+            if (!acceptsAddedSongs(playlist.mode)) return@withLock playlist
             if ((playlist.mode == LIKED_SONGS_MODE || !allowDuplicate) && playlist.tracks.any { it.sameSongAs(track) }) return@withLock playlist
             // An imported file is playable by definition (it is on disk). If unpinned, try to resolve YouTube ID, but always keep the track.
             val trackToAdd = if (!track.isLocalFile() && track.youtubeVideoIdOrNull() == null) {

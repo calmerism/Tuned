@@ -69,8 +69,8 @@ android {
         applicationId = "com.tamed.music"
         minSdk = (project.findProperty("minSdk") as? String)?.toIntOrNull() ?: 29
         targetSdk = 35
-        versionCode = 200
-        versionName = "2026.10"
+        versionCode = 201
+        versionName = "2026.11"
 
         val appleLyricsToken = resolveSecret("APPLE_LYRICS_TOKEN")
         val appleLyricsUrl = resolveSecret("APPLE_LYRICS_URL")

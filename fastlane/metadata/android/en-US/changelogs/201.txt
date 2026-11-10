@@ -1,0 +1,7 @@
+- History, Quick picks and Jump back in now come from what you actually played
+- Album tracks play the song's audio, not the music video's
+- Other versions opens the right edition
+- Local songs group into albums
+- ListenBrainz, skip silence and a separate quality for mobile data
+- A video's cover can show square or whole
+- All 14 languages are fully translated

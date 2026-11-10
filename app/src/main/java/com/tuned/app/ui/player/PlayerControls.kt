@@ -666,18 +666,24 @@ internal fun PlayerUtilityControls(
     }
 }
 
-/** The format alone for the player's chip: "OPUS", "AAC", "Lossless"; empty when unknown. */
+/**
+ * What is playing, in plain words, for the player's chip: "Lossless", "Hi-Res Lossless",
+ * "Dolby Atmos", or the format with its bitrate ("AAC 256 kbps") so a compressed stream is
+ * never mistaken for more than it is. Empty when unknown.
+ */
 internal fun qualityFormatLabel(state: MusicPlayerState): String {
     val codec = state.audioCodec.orEmpty()
-    return when {
-        isSpatialAudioCodec(state.audioCodec) -> "Dolby Atmos"
-        state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16) -> "Hi-Res Lossless"
-        state.isLossless -> "Lossless"
-        codec.contains("OPUS", ignoreCase = true) -> "OPUS"
+    val format = when {
+        isSpatialAudioCodec(state.audioCodec) -> return "Dolby Atmos"
+        state.isLossless && ((state.samplingRateKHz ?: 44.1) > 48.0 || (state.bitDepth ?: 16) > 16) -> return "Hi-Res Lossless"
+        state.isLossless -> return "Lossless"
+        codec.contains("OPUS", ignoreCase = true) -> "Opus"
         codec.contains("AAC", ignoreCase = true) || codec.contains("mp4a", ignoreCase = true) -> "AAC"
         codec.contains("MP3", ignoreCase = true) || codec.contains("mpeg", ignoreCase = true) -> "MP3"
-        else -> ""
+        else -> return ""
     }
+    val kbps = state.bitrateKbps?.takeIf { it in 32..640 } ?: return format
+    return "$format $kbps kbps"
 }
 
 /** Plain quality line for the player: the format name alone ("AAC", "Lossless", "Dolby Atmos"). */

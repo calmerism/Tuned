@@ -52,6 +52,8 @@ import kotlinx.coroutines.delay
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FastForward
+import androidx.compose.material.icons.filled.SignalCellularAlt
 import androidx.compose.material.icons.filled.Album
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.Bolt
@@ -323,6 +325,8 @@ fun SettingsScreen(
         }
     }
     var showQualityDialog by remember { mutableStateOf(false) }
+    var showMobileQualityDialog by remember { mutableStateOf(false) }
+    var showListenBrainzDialog by remember { mutableStateOf(false) }
     var showDownloadQualityDialog by remember { mutableStateOf(false) }
     var showEqSheet by remember { mutableStateOf(false) }
     var showAutoEq by remember { mutableStateOf(false) }
@@ -670,6 +674,8 @@ fun SettingsScreen(
                         item {
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     SectionLabel(stringResource(R.string.settings_section_audio))
+                    val hasLosslessSource = misc.httpAddons.any { it.enabled && it.url.isNotBlank() } ||
+                        (misc.addonEnabled && misc.addonUrl.isNotBlank())
                     val qualitySubtitle = when (misc.losslessQuality) {
                         28 -> "Dolby Atmos"
                         27 -> "Max"
@@ -704,7 +710,12 @@ fun SettingsScreen(
                                 iconContainer = MaterialTheme.colorScheme.primaryContainer,
                                 iconTint = MaterialTheme.colorScheme.onPrimaryContainer,
                                 title = stringResource(R.string.settings_streaming_quality),
-                                subtitle = if (misc.losslessQuality == -1) "Plays YouTube's own stream" else qualitySubtitle,
+                                subtitle = when {
+                                    misc.losslessQuality == -1 -> stringResource(R.string.settings_quality_youtube_sub)
+                                    // Anything above YouTube's stream comes from an add-on; say so when there is none.
+                                    !hasLosslessSource -> stringResource(R.string.settings_quality_needs_addon)
+                                    else -> qualitySubtitle
+                                },
                                 onClick = { showQualityDialog = true },
                                 position = position,
                                 isHighlighted = (highlightedSettingId == "audio.streaming_quality"),
@@ -826,6 +837,33 @@ fun SettingsScreen(
                                     isHighlighted = (highlightedSettingId == "audio.battery_optimization"),
                                 )
                             }
+                        }
+                    }
+                    SettingsGroup(rowCount = 2) { index, position ->
+                        when (index) {
+                            0 -> SettingsActionCard(
+                                icon = Icons.Filled.SignalCellularAlt,
+                                iconContainer = MaterialTheme.colorScheme.secondaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onSecondaryContainer,
+                                title = stringResource(R.string.settings_mobile_quality),
+                                subtitle = if (misc.mobileDataQuality == 0) stringResource(R.string.settings_mobile_quality_same)
+                                else qualityName(misc.mobileDataQuality),
+                                onClick = { showMobileQualityDialog = true },
+                                position = position,
+                            )
+                            1 -> SettingsToggleCard(
+                                icon = Icons.Filled.FastForward,
+                                iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
+                                iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                                title = stringResource(R.string.settings_skip_silence),
+                                subtitle = stringResource(
+                                    if (misc.isBitPerfectEnabled) R.string.settings_skip_silence_bitperfect else R.string.settings_skip_silence_sub,
+                                ),
+                                checked = misc.skipSilenceEnabled && !misc.isBitPerfectEnabled,
+                                onCheckedChange = viewModel::setSkipSilence,
+                                enabled = !misc.isBitPerfectEnabled,
+                                position = position,
+                            )
                         }
                     }
                 }
@@ -1728,6 +1766,16 @@ fun SettingsScreen(
                         onCheckedChange = viewModel::setDiscordPresenceEnabled,
                         isHighlighted = (highlightedSettingId == "discord.presence"),
                     )
+                    SettingsActionCard(
+                        icon = Icons.Filled.Headphones,
+                        iconContainer = MaterialTheme.colorScheme.tertiaryContainer,
+                        iconTint = MaterialTheme.colorScheme.onTertiaryContainer,
+                        title = "ListenBrainz",
+                        subtitle = stringResource(
+                            if (misc.listenBrainzToken.isBlank()) R.string.settings_listenbrainz_off else R.string.settings_listenbrainz_on,
+                        ),
+                        onClick = { showListenBrainzDialog = true },
+                    )
                 }
             }
                     }
@@ -2269,6 +2317,77 @@ fun SettingsScreen(
         )
     }
 
+    if (showMobileQualityDialog) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showMobileQualityDialog = false },
+            title = { Text(stringResource(R.string.settings_mobile_quality)) },
+            text = {
+                Column {
+                    listOf(0, 27, 7, 6, 5, 4, -1).forEach { quality ->
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(14.dp))
+                                .clickable {
+                                    viewModel.setMobileDataQuality(quality)
+                                    showMobileQualityDialog = false
+                                }
+                                .padding(horizontal = 8.dp, vertical = 12.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                if (quality == 0) stringResource(R.string.settings_mobile_quality_same) else qualityName(quality),
+                                modifier = Modifier.weight(1f),
+                                fontWeight = if (misc.mobileDataQuality == quality) FontWeight.Bold else FontWeight.Normal,
+                            )
+                            if (misc.mobileDataQuality == quality) Icon(Icons.Filled.Check, contentDescription = null)
+                        }
+                    }
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = { showMobileQualityDialog = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
+            },
+        )
+    }
+    if (showListenBrainzDialog) {
+        var token by remember { mutableStateOf(misc.listenBrainzToken) }
+        val accepted = stringResource(R.string.settings_listenbrainz_on)
+        val refused = stringResource(R.string.settings_listenbrainz_refused)
+        val offline = stringResource(R.string.settings_listenbrainz_offline)
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showListenBrainzDialog = false },
+            title = { Text("ListenBrainz") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.settings_listenbrainz_hint), style = MaterialTheme.typography.bodyMedium)
+                    androidx.compose.material3.OutlinedTextField(
+                        value = token,
+                        onValueChange = { token = it },
+                        singleLine = true,
+                        label = { Text(stringResource(R.string.settings_listenbrainz_token)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(onClick = {
+                    viewModel.saveListenBrainzToken(token, accepted, refused, offline)
+                    showListenBrainzDialog = false
+                }) { Text(stringResource(R.string.common_save)) }
+            },
+            dismissButton = {
+                if (misc.listenBrainzToken.isNotBlank()) {
+                    androidx.compose.material3.TextButton(onClick = {
+                        viewModel.saveListenBrainzToken("", accepted, refused, offline)
+                        showListenBrainzDialog = false
+                    }) { Text(stringResource(R.string.settings_listenbrainz_disconnect)) }
+                }
+            },
+        )
+    }
     if (showQualityDialog) {
         val tiers = listOf(
             Triple(28, "Dolby Atmos", "Spatial audio" to ""),
@@ -2716,4 +2835,15 @@ private fun CheckUpdatesRow(
         position = position,
         isHighlighted = isHighlighted,
     )
+}
+
+/** The streaming quality tiers by their short names, as the quality sheet lists them. */
+private fun qualityName(quality: Int): String = when (quality) {
+    28 -> "Dolby Atmos"
+    27 -> "Max"
+    7 -> "Hi-Res"
+    6 -> "CD"
+    5 -> "Standard"
+    4 -> "Data saver"
+    else -> "YouTube Music"
 }

@@ -1614,4 +1614,20 @@
     <plurals name="recap_stat_songs"><item quantity="one">song</item><item quantity="other">songs</item></plurals>
     <plurals name="recap_stat_artists"><item quantity="one">artist</item><item quantity="other">artists</item></plurals>
     <string name="local_albums">Albums</string>
+    <string name="video_shape_square">Square cover</string>
+    <string name="video_shape_original">Whole video frame</string>
+    <string name="settings_quality_youtube_sub">Plays YouTube\'s own stream</string>
+    <string name="settings_quality_needs_addon">Needs an add-on. Playing YouTube\'s stream</string>
+    <string name="settings_mobile_quality">Quality on mobile data</string>
+    <string name="settings_mobile_quality_same">Same as Wi-Fi</string>
+    <string name="settings_skip_silence">Skip silence</string>
+    <string name="settings_skip_silence_sub">Quiet gaps in songs are skipped</string>
+    <string name="settings_skip_silence_bitperfect">Off in bit-perfect mode</string>
+    <string name="settings_listenbrainz_off">Not connected</string>
+    <string name="settings_listenbrainz_on">Sending your listens</string>
+    <string name="settings_listenbrainz_refused">ListenBrainz didn\'t accept that token</string>
+    <string name="settings_listenbrainz_offline">Couldn\'t reach ListenBrainz</string>
+    <string name="settings_listenbrainz_hint">Paste your user token from listenbrainz.org/settings.</string>
+    <string name="settings_listenbrainz_token">User token</string>
+    <string name="settings_listenbrainz_disconnect">Disconnect</string>
 </resources>

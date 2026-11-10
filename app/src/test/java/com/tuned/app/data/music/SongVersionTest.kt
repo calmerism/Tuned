@@ -24,6 +24,20 @@ class SongVersionTest {
     }
 
     @Test
+    fun aRadioEditVideoOrALongIntroStillFindsTheSong() {
+        val dance = track("vid", "D.A.N.C.E.", artist = "Justice", video = true, seconds = 181)
+        assertThat(isSongVersionOf(dance, track("song", "D.A.N.C.E.", artist = "Justice", seconds = 243))).isTrue()
+        val stress = track("vid", "Stress", artist = "Justice", video = true, seconds = 405)
+        assertThat(isSongVersionOf(stress, track("song", "Stress", artist = "Justice", seconds = 299))).isTrue()
+    }
+
+    @Test
+    fun anotherTakeOfTheTitleIsNotTheSong() {
+        val dance = track("vid", "D.A.N.C.E.", artist = "Justice", video = true, seconds = 181)
+        assertThat(isSongVersionOf(dance, track("song", "D.A.N.C.E. (WWW)", artist = "Justice", seconds = 197))).isFalse()
+    }
+
+    @Test
     fun aLiveTakeKeepsItsOwnAudio() {
         val live = track("vid", "Let It Happen (Live at Glastonbury)", video = true)
         assertThat(isSongVersionOf(live, track("song", "Let It Happen"))).isFalse()

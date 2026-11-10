@@ -151,6 +151,7 @@ class SettingsClearAllDataTest {
             innerTube = innerTube,
             appUpdateManager = appUpdateManager,
             spotifyPreferences = spotifyPreferences,
+            listenBrainz = mockk(relaxed = true),
             context = RuntimeEnvironment.getApplication(),
         )
     }

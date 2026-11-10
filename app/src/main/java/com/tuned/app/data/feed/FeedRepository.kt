@@ -337,8 +337,12 @@ class FeedRepository @Inject constructor(
         val likedSongsId = likedSongsIdDef.await()
 
         val localLibrary = localLibraryDef.await()
-        val localQuickPicks = localLibrary.map {
-            YouTubeMusicTrack(it.youtubeVideoIdOrNull().orEmpty(), it.name, it.artist, it.album, it.artworkUrl)
+        // What was really played, newest first. Saved and liked songs are a library, not a
+        // history, so they no longer stand in for one on Quick picks or Jump back in.
+        val playHistory = runCatching { songPlayStatsDao.recentlyPlayed(60) }.getOrDefault(emptyList())
+            .filter { it.title.isNotBlank() && (it.totalPlayTimeMs >= MIN_LISTEN_MS || it.playCount > 0) }
+        val localQuickPicks = playHistory.filter { !it.videoId.isNullOrBlank() }.map {
+            YouTubeMusicTrack(it.videoId.orEmpty(), it.title, it.artist, null, it.artworkUrl)
         }
 
         // Connected: personal mixes + taste signals + related artists lead.
@@ -648,8 +652,10 @@ class FeedRepository @Inject constructor(
                         generated to (12.0 / (1 + i / 6.0) + (affinity[ArtistHelper.primaryArtist(it.artist).trim().lowercase()] ?: 0.0) * 30 + rotationJitter(generated)),
                     )
                 }
-            // Local-first: Room liked + saved rank by affinity like taste.
-            localLibrary.forEachIndexed { i, t ->
+            // Heavy rotation means played a lot: the play log by listening time, not the saved library.
+            playHistory.sortedByDescending { it.totalPlayTimeMs }.map {
+                GeneratedTrack(it.title, it.artist, it.artworkUrl, url = it.videoId?.let { id -> "https://www.youtube.com/watch?v=$id" }.orEmpty())
+            }.forEachIndexed { i, t ->
                 val aff = ArtistHelper.splitArtists(t.artist).maxOfOrNull { affinity[it.trim().lowercase()] ?: 0.0 } ?: 0.0
                 add(t to (aff * 35 + 16.0 / (1 + i / 6.0) + rotationJitter(t)))
             }
@@ -657,7 +663,6 @@ class FeedRepository @Inject constructor(
             .sortedByDescending { it.second }
             .map { it.first }
         val heavyRotation = heavyCandidates.distinctBy(GeneratedTrack::key).take(15)
-            .ifEmpty { localLibrary.take(15) }
 
         // Preserve each provider's history order while sharing the existing shelf.
         val ytJumpCandidates = buildList {
@@ -677,15 +682,13 @@ class FeedRepository @Inject constructor(
         val lastFmJumpCandidates = recentTracks.map {
             it.copy(artist = ArtistRef(name = ArtistHelper.primaryArtist(it.artist.displayName)))
         }
-        // Local-first "Jump Back In": Room liked + saved as recent history
-        // when Last.fm/YT history is unavailable (guest/offline).
-        val localJumpCandidates = localLibrary.take(20).map {
+        // Jump back in is history: the songs played on this device, never the saved library.
+        val localJumpCandidates = playHistory.take(30).map {
             RecentTrack(
-                name = it.name,
+                name = it.title,
                 artist = ArtistRef(name = ArtistHelper.primaryArtist(it.artist)),
-                album = ArtistRef(name = it.album.orEmpty()),
                 image = it.artworkUrl?.let { url -> listOf(ImageDto(url, "extralarge")) }.orEmpty(),
-                url = it.url,
+                url = it.videoId?.let { id -> "https://www.youtube.com/watch?v=$id" }.orEmpty(),
             )
         }
         val jumpCandidates = (blend(ytJumpCandidates, lastFmJumpCandidates) + localJumpCandidates)

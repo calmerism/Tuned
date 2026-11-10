@@ -137,6 +137,8 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.palette.graphics.Palette
+import androidx.compose.runtime.collectAsState
+import androidx.compose.animation.core.animateDpAsState
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.withTimeoutOrNull
 import androidx.compose.runtime.produceState
@@ -766,6 +768,14 @@ internal fun NowPlayingArtworkStage(
             .coerceAtLeast(0.dp)
             .coerceAtMost(SleeveMaxSize)
 
+        // A video's frame can show whole: the sleeve turns 16:9 at the same width.
+        val coverSquare by VideoCoverShape.square.collectAsState()
+        val sleeveHeight by animateDpAsState(
+            if (VideoCoverShape.isWide(coverUrl, coverSquare)) artworkSize / VIDEO_COVER_ASPECT else artworkSize,
+            spring(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow),
+            label = "sleeveHeight",
+        )
+
         // A playing music video takes the sleeve's place.
         val musicVideo = LocalMusicVideo.current
         val shownSleeveAlpha = sleeveAlpha * (1f - (musicVideo?.cover ?: 0f))
@@ -789,7 +799,7 @@ internal fun NowPlayingArtworkStage(
                 shadowElevation = if (state.isPlaying) 28.dp * shownSleeveAlpha else 12.dp * shownSleeveAlpha,
                 modifier = Modifier
                     .nowPlayingArtworkBounds(22.dp)
-                    .size(artworkSize)
+                    .size(artworkSize, sleeveHeight)
                     .graphicsLayer {
                         scaleX = artworkPlayingScale
                         scaleY = artworkPlayingScale

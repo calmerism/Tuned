@@ -73,6 +73,10 @@ enum class LyricsProvider(val id: String, val title: String, val subtitle: Strin
     }
 }
 
+/** The settings as they apply on this network: mobile data can have its own streaming quality. */
+fun MiscSettings.forNetwork(onMobileData: Boolean): MiscSettings =
+    if (onMobileData && mobileDataQuality != 0) copy(losslessQuality = mobileDataQuality) else this
+
 data class MiscSettings(
     /** When on, the app's accent color follows the dominant color of the
      *  currently-scrobbling track's artwork (Home's "now playing" track),
@@ -115,6 +119,8 @@ data class MiscSettings(
     val systemEffectsMode: Boolean = false,
     /** When true, shows synced music video option in the Now Playing menu (Settings -> Experimental). Off by default. */
     val musicVideoEnabled: Boolean = false,
+    /** A video's frame as the cover: cropped square (true) or whole at 16:9. */
+    val videoCoverSquare: Boolean = true,
     val wordByWordLyrics: Boolean = true,
     /** Preferred lyrics source (Settings -> Experimental -> Lyrics Provider).
      *  AUTO races all providers (fastest valid word-sync wins); an explicit
@@ -137,6 +143,12 @@ data class MiscSettings(
     /** When true (default), uses the multi-layer dynamic wavy seekbar.
      *  When false, uses the classic standard progress slider in the player tab. */
     val wavySeekbarEnabled: Boolean = true,
+    /** Quiet gaps inside and between songs are skipped. Never applies in bit-perfect mode. */
+    val skipSilenceEnabled: Boolean = false,
+    /** Streaming quality on mobile data; 0 follows [losslessQuality]. */
+    val mobileDataQuality: Int = 0,
+    /** ListenBrainz user token; blank is off. */
+    val listenBrainzToken: String = "",
     val rotatingBackgroundEnabled: Boolean = true,
     /** When true (default), animates fluid rotating artwork in the lyrics background.
      *  When false, uses static blurred artwork background in the lyrics view. */
@@ -278,6 +290,9 @@ class SettingsPreferences @Inject constructor(
         val PREFER_LOSSLESS_STREAMING = booleanPreferencesKey("lw_prefer_lossless_streaming")
         val PREFER_PROVIDER_MODULES = booleanPreferencesKey("lw_prefer_provider_modules")
         val LOSSLESS_QUALITY = intPreferencesKey("lw_lossless_quality")
+        val SKIP_SILENCE = booleanPreferencesKey("tuned_skip_silence")
+        val MOBILE_DATA_QUALITY = intPreferencesKey("tuned_mobile_data_quality")
+        val LISTENBRAINZ_TOKEN = stringPreferencesKey("tuned_listenbrainz_token")
         val DOWNLOAD_QUALITY = intPreferencesKey("lw_download_quality")
         val MUSIC_ENHANCER = booleanPreferencesKey("lw_music_enhancer")
         val CLARITY_PRESET = intPreferencesKey("lw_clarity_preset")
@@ -308,6 +323,7 @@ class SettingsPreferences @Inject constructor(
         val DOWNLOAD_STRUCTURE = stringPreferencesKey("lw_download_structure")
         val SYSTEM_EFFECTS_MODE = booleanPreferencesKey("lw_system_effects_mode")
         val MUSIC_VIDEO_ENABLED = booleanPreferencesKey("lw_music_video_enabled")
+        val VIDEO_COVER_SQUARE = booleanPreferencesKey("tuned_video_cover_square")
         val USE_ALBUM_ARTIST_FOLDERS = booleanPreferencesKey("lw_use_album_artist_folders")
         val PRIMARY_ARTIST_ONLY = booleanPreferencesKey("lw_primary_artist_only")
         val HIDDEN_HOME_SECTIONS = stringSetPreferencesKey("lw_hidden_home_sections")
@@ -363,6 +379,7 @@ class SettingsPreferences @Inject constructor(
                 downloadQuality = p.readSafely(Keys.DOWNLOAD_QUALITY)?.takeIf { it in DOWNLOAD_QUALITIES } ?: 27,
                 systemEffectsMode = p.readSafely(Keys.SYSTEM_EFFECTS_MODE) ?: false,
                 musicVideoEnabled = p.readSafely(Keys.MUSIC_VIDEO_ENABLED) ?: false,
+                videoCoverSquare = p.readSafely(Keys.VIDEO_COVER_SQUARE) ?: true,
                 isStudioMasterClarityEnabled = p.readSafely(Keys.MUSIC_ENHANCER) ?: true,
                 clarityPreset = p.readSafely(Keys.CLARITY_PRESET)?.takeIf { it in 0..3 } ?: 0,
                 clarityAtmosBypass = p.readSafely(Keys.CLARITY_ATMOS_BYPASS) ?: false,
@@ -377,6 +394,9 @@ class SettingsPreferences @Inject constructor(
                 autoPlayEnabled = p.readSafely(Keys.AUTOPLAY_ENABLED) ?: true,
                 musicHapticsEnabled = p.readSafely(Keys.MUSIC_HAPTICS_ENABLED) ?: false,
                 wavySeekbarEnabled = p.readSafely(Keys.WAVY_SEEKBAR_ENABLED) ?: true,
+                skipSilenceEnabled = p.readSafely(Keys.SKIP_SILENCE) ?: false,
+                mobileDataQuality = p.readSafely(Keys.MOBILE_DATA_QUALITY)?.takeIf { it in LOSSLESS_QUALITIES } ?: 0,
+                listenBrainzToken = p.readSafely(Keys.LISTENBRAINZ_TOKEN).orEmpty(),
                 rotatingBackgroundEnabled = p.readSafely(Keys.ROTATING_BACKGROUND_ENABLED) ?: true,
                 lyricsRotatingBackgroundEnabled = p.readSafely(Keys.LYRICS_ROTATING_BACKGROUND_ENABLED) ?: true,
                 keepLyricsScreenAwake = p.readSafely(Keys.KEEP_LYRICS_SCREEN_AWAKE) ?: false,
@@ -584,6 +604,19 @@ class SettingsPreferences @Inject constructor(
         }
     }
 
+    suspend fun setSkipSilence(enabled: Boolean) {
+        dataStore.edit { it[Keys.SKIP_SILENCE] = enabled }
+    }
+
+    /** 0 means "same as Wi-Fi". */
+    suspend fun setMobileDataQuality(quality: Int) {
+        dataStore.edit { it[Keys.MOBILE_DATA_QUALITY] = quality.takeIf { q -> q in LOSSLESS_QUALITIES } ?: 0 }
+    }
+
+    suspend fun setListenBrainzToken(token: String) {
+        dataStore.edit { it[Keys.LISTENBRAINZ_TOKEN] = token.trim() }
+    }
+
     suspend fun setLosslessQuality(quality: Int) {
         dataStore.edit {
             val q = quality.takeIf { it in LOSSLESS_QUALITIES } ?: 27
@@ -604,6 +637,10 @@ class SettingsPreferences @Inject constructor(
 
     suspend fun setMusicVideoEnabled(enabled: Boolean) {
         dataStore.edit { it[Keys.MUSIC_VIDEO_ENABLED] = enabled }
+    }
+
+    suspend fun setVideoCoverSquare(square: Boolean) {
+        dataStore.edit { it[Keys.VIDEO_COVER_SQUARE] = square }
     }
 
     suspend fun setStudioMasterClarity(enabled: Boolean) {

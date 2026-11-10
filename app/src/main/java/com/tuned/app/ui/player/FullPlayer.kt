@@ -91,6 +91,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -364,6 +365,7 @@ internal fun FullPlayer(
     val view = LocalView.current
     LyricsFullscreenEffect(view, lyricsFullscreen)
     var showTrackMenu by remember(track.videoId, track.title) { mutableStateOf(false) }
+    val coverSquare by VideoCoverShape.square.collectAsState()
     // Music video in place of the artwork ("Watch video"), and its full-screen view.
     val musicVideoOn by MusicVideoMode.on.collectAsStateWithLifecycle()
     var musicVideoFullscreen by remember { mutableStateOf(false) }
@@ -626,6 +628,8 @@ internal fun FullPlayer(
             playableTrack = track,
             onDismiss = { showTrackMenu = false },
             onPlayInTuned = { player.play(track, sourceLabel = state.sourceLabel) },
+            videoCoverSquare = coverSquare.takeIf { com.tuned.app.data.artwork.ArtworkNormalizer.isVideoThumbnail(resolvedAmbientUrl) },
+            onToggleVideoCover = { VideoCoverShape.set(!coverSquare) },
         )
     }
     if (musicVideoFullscreen) {

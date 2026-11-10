@@ -134,6 +134,14 @@ class PlayerViewModel @Inject constructor(
     }
 
     init {
+        // The video cover's shape is kept like any other setting: restored here, saved on change.
+        viewModelScope.launch {
+            VideoCoverShape.set(settingsPreferences.settings.first().videoCoverSquare)
+            VideoCoverShape.square.drop(1).collect { settingsPreferences.setVideoCoverSquare(it) }
+        }
+    }
+
+    init {
         // Dynamic Now Playing follows the song loaded in the player even before the playback
         // service starts (a paused song restored at launch left the default accent showing).
         viewModelScope.launch {
@@ -235,7 +243,7 @@ class PlayerViewModel @Inject constructor(
     private suspend fun refreshCustomPlaylists() {
         try {
             _customPlaylists.value = (playlistRepository.getAll()
-                .filter { it.mode == "custom" || it.mode == LIKED_SONGS_MODE }
+                .filter { com.tuned.app.data.playlist.acceptsAddedSongs(it.mode) }
                 .sortedByDescending { it.mode == LIKED_SONGS_MODE } + ytMusicLibraryManager.playlists.value)
                 .distinctBy { it.id }
         } catch (error: CancellationException) {

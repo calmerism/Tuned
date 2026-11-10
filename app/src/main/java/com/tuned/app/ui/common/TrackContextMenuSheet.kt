@@ -56,6 +56,8 @@ import androidx.compose.material.icons.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.QueueMusic
 import androidx.compose.material.icons.automirrored.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.CropSquare
+import androidx.compose.material.icons.filled.Crop169
 import androidx.compose.material.icons.filled.Remove
 import androidx.compose.material.icons.filled.Shuffle
 import androidx.compose.material.icons.filled.SmartDisplay
@@ -326,6 +328,9 @@ fun TrackContextMenuSheet(
     onExploreGenre: ((genre: String) -> Unit)? = null,
     onDeleteScrobble: ((trackName: String, artistName: String) -> Unit)? = null,
     onRefreshArtwork: (() -> Unit)? = null,
+    /** Shown when the cover is a video's frame: crop it square, or show it whole at 16:9. */
+    videoCoverSquare: Boolean? = null,
+    onToggleVideoCover: (() -> Unit)? = null,
     onRemoveFromPlaylist: (() -> Unit)? = null,
     onRemoveFromQueue: (() -> Unit)? = null,
     genreResolverViewModel: GenreRowViewModel = hiltViewModel(),
@@ -650,6 +655,18 @@ fun TrackContextMenuSheet(
                                             MenuActionRow(Icons.Filled.ContentCopy, stringResource(R.string.menu_copy_song), position = pos) {
                                                 clipboard.setText(AnnotatedString("${t.name} - ${t.artist}"))
                                                 notify(context.getString(R.string.menu_copied))
+                                                close()
+                                            }
+                                        }
+                                    }
+                                    if (onToggleVideoCover != null && videoCoverSquare != null) {
+                                        add { pos ->
+                                            MenuActionRow(
+                                                if (videoCoverSquare) Icons.Filled.Crop169 else Icons.Filled.CropSquare,
+                                                stringResource(if (videoCoverSquare) R.string.video_shape_original else R.string.video_shape_square),
+                                                position = pos,
+                                            ) {
+                                                onToggleVideoCover()
                                                 close()
                                             }
                                         }

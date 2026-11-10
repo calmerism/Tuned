@@ -61,6 +61,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -208,11 +209,18 @@ internal fun MiniPlayer(
                 .padding(start = MiniArtInset, end = Space.xs),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // The same pinned cover as the full player, so the artwork that
+            // travels between them is the image already in memory.
+            val cover = rememberPinnedCover(track, androidx.hilt.navigation.compose.hiltViewModel())
+            // A whole video frame is 16:9 here too, so the cover keeps its shape in the morph.
+            val coverSquare by VideoCoverShape.square.collectAsState()
+            val artWidth by animateDpAsState(
+                if (VideoCoverShape.isWide(cover, coverSquare)) MiniArtSize * VIDEO_COVER_ASPECT else MiniArtSize,
+                motion.base(),
+                label = "miniArtWidth",
+            )
             // 52dp artwork inset 10dp: 22dp corners stay concentric with the 32dp card.
-            Box(Modifier.size(MiniArtSize).clip(MiniArtShape).background(colors.surface3)) {
-                // The same pinned cover as the full player, so the artwork that
-                // travels between them is the image already in memory.
-                val cover = rememberPinnedCover(track, androidx.hilt.navigation.compose.hiltViewModel())
+            Box(Modifier.size(artWidth, MiniArtSize).clip(MiniArtShape).background(colors.surface3)) {
                 PlayerArtwork(
                     track,
                     Modifier.nowPlayingArtworkBounds(Radius.dock - MiniArtInset).fillMaxSize(),

@@ -1,0 +1,36 @@
+Tuned plays YouTube Music: songs, albums, artists, playlists and podcasts, in the background and without ads. Signing in is optional. With an account it syncs your library, likes and history; without one it works as a guest.
+
+<b>Listening</b>
+<ul>
+<li>Synced lyrics, word by word where the provider has them, with duets, background vocals, translation and romanisation</li>
+<li>AutoMix beat-matches songs when their tempos are close; crossfade for everything else</li>
+<li>Album pages with notes, release details, other versions and moving covers</li>
+<li>Sing lowers the vocals so you can sing along</li>
+<li>Speed and pitch, skip silence, a sleep timer</li>
+</ul>
+
+<b>Sound</b>
+<ul>
+<li>Bit-perfect output to USB DACs through a native audio engine</li>
+<li>AutoEQ headphone correction and a parametric equalizer</li>
+<li>A signal path view that shows every stage the audio passes through</li>
+<li>The player says what is playing: the format and bitrate, or Lossless when it is</li>
+</ul>
+
+<b>Your library</b>
+<ul>
+<li>Liked songs, playlists, pins, and songs stored on the phone grouped into albums</li>
+<li>Downloads with tags, artwork and .lrc lyrics, in a folder you choose</li>
+<li>Playlist import from Spotify, Apple Music and YouTube</li>
+<li>Playlist Playground builds a playlist from an idea you type</li>
+<li>A yearly recap of your minutes, top songs and top artists</li>
+</ul>
+
+<b>Connections</b>
+<ul>
+<li>Last.fm and ListenBrainz scrobbling, Discord status</li>
+<li>Android Auto, Chromecast, and Jam for listening together</li>
+<li>Four home screen widgets coloured from the cover</li>
+</ul>
+
+Tuned is free software under the GPL-3.0. It has no ads and no tracking, and is not affiliated with YouTube or Google.

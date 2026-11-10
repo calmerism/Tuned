@@ -87,8 +87,13 @@ data class YouTubeMusicTrack(
 
 private val VIDEO_TITLE_EXTRAS = Regex("(?i)\\s*[(\\[][^)\\]]*(official|video|audio|visuali[sz]er|lyrics?|hd|4k|remaster)[^)\\]]*[)\\]]")
 private val OTHER_PERFORMANCE = Regex("(?i)\\b(live|cover|remix|acoustic|session|karaoke|instrumental|reaction|performance|sped|slowed|teaser|trailer|behind the)\\b")
-/** How far a video can run past its song: official videos often have an intro or outro. */
-private const val SONG_VERSION_MAX_DURATION_GAP_SECONDS = 60
+/**
+ * How far a video's length can stray from its song: official videos are often a radio edit, or
+ * carry an intro or outro. A fixed minute refused D.A.N.C.E. (3:01 video, 4:03 song) and Stress
+ * (6:45 against 4:59); a share of the length still keeps a 4-minute edit off a 7-minute cut.
+ */
+private const val SONG_VERSION_MIN_GAP_SECONDS = 60
+private const val SONG_VERSION_GAP_SHARE = 0.35
 
 /** A video title reduced to the song's name: no "(Official Video)", no leading "Artist - ". */
 internal fun songTitleFromVideoTitle(title: String, artist: String): String {
@@ -113,7 +118,15 @@ internal fun isSongVersionOf(video: YouTubeMusicTrack, song: YouTubeMusicTrack):
     if (!videoArtist.contains(songArtist) && !songArtist.contains(videoArtist)) return false
     val a = video.durationSeconds
     val b = song.durationSeconds
-    return a == null || b == null || kotlin.math.abs(a - b) <= SONG_VERSION_MAX_DURATION_GAP_SECONDS
+    if (a == null || b == null) return true
+    val allowed = maxOf(SONG_VERSION_MIN_GAP_SECONDS.toDouble(), maxOf(a, b) * SONG_VERSION_GAP_SHARE)
+    return kotlin.math.abs(a - b) <= allowed
+}
+
+/** The song for [video] among [results], the one from [album] first when the album is known. */
+internal fun pickSongVersion(video: YouTubeMusicTrack, results: List<YouTubeMusicTrack>, album: String?): YouTubeMusicTrack? {
+    val songs = results.filter { isSongVersionOf(video, it) }
+    return songs.firstOrNull { album != null && it.album?.trim().equals(album.trim(), ignoreCase = true) } ?: songs.firstOrNull()
 }
 
 /**
@@ -2653,6 +2666,9 @@ class InnerTubeMusicApi @Inject constructor(
         val artworkUrl = thumbs?.lastOrNull()?.asObject()?.string("url")?.highResolutionArtwork()
 
         val songPages = collectBrowseSongPages(root, limit = 100)
+        songPages.tracks.forEach { track ->
+            track.videoId?.takeIf { it.isNotBlank() }?.let { songVersionHints[it] = track.title to title }
+        }
         val tracks = songPages.tracks.map { track ->
             val cleanArtist = track.artist.trim()
             val resolvedArtist = if (com.tuned.app.util.ArtistHelper.isPlayCountOrStat(cleanArtist) ||
@@ -3029,6 +3045,12 @@ class InnerTubeMusicApi @Inject constructor(
     private val queueTrackCache = java.util.concurrent.ConcurrentHashMap<String, YouTubeMusicTrack>()
     /** The answer for each video id; an empty string means it has no song version. */
     private val songVersionCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    /**
+     * The title and album an album page gives a video id. Album pages list music videos for
+     * tracks that have one, and the video can carry a shorter name: Woman Worldwide's
+     * "D.A.N.C.E. (WWW)" video is called plain "D.A.N.C.E.", which found the Cross song.
+     */
+    private val songVersionHints = java.util.concurrent.ConcurrentHashMap<String, Pair<String, String>>()
 
     /** What YouTube knows about these ids, in one request per 50. Ids it can't answer for are absent. */
     private suspend fun queueTracks(videoIds: List<String>): Map<String, YouTubeMusicTrack> = withContext(Dispatchers.IO) {
@@ -3075,10 +3097,12 @@ class InnerTubeMusicApi @Inject constructor(
      */
     suspend fun songVersionOf(videoId: String): String? {
         songVersionCache[videoId]?.let { return it.ifEmpty { null } }
-        val video = queueTracks(listOf(videoId))[videoId] ?: return null
+        val found = queueTracks(listOf(videoId))[videoId] ?: return null
+        val hint = songVersionHints[videoId]
+        val video = hint?.let { found.copy(title = it.first) } ?: found
         val song = if (video.isVideo == true) {
             val title = songTitleFromVideoTitle(video.title, video.artist)
-            searchSongs("$title ${video.artist}", limit = 5).firstOrNull { isSongVersionOf(video, it) }?.videoId
+            pickSongVersion(video, searchSongs("$title ${video.artist}", limit = 10), album = hint?.second)?.videoId
         } else {
             null
         }
